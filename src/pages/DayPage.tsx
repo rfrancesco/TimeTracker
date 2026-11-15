@@ -9,22 +9,14 @@ import { db, nowIso, type Interval } from '../db';
 import { useActive, useAreas, useNow, useSubAreas } from '../hooks';
 import { iconFor } from '../icons';
 import { formatDuration } from '../timer';
+import { MINUTE, addLocalDays, atLocalTime, hourMarks, localDateKey, startOfLocalDay } from '../time';
 
 const PX_PER_MIN = 1.2;
-const MIN = 60_000;
+const MIN = MINUTE;
 const SNAP_MIN = 5;
-const DAY_HEIGHT = 24 * 60 * PX_PER_MIN;
 
-const midnight = (d: Date) => {
-  const x = new Date(d);
-  x.setHours(0, 0, 0, 0);
-  return x;
-};
-const addDays = (d: Date, n: number) => {
-  const x = new Date(d);
-  x.setDate(x.getDate() + n);
-  return midnight(x);
-};
+const midnight = startOfLocalDay;
+const addDays = addLocalDays;
 const hhmm = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
 interface Block {
@@ -83,6 +75,9 @@ export default function DayPage() {
   const dayStart = day.getTime();
   const dayEnd = addDays(day, 1).getTime();
   const isToday = dayStart === midnight(new Date(now)).getTime();
+  // Real length of this local day: 23 h / 25 h on DST transition days.
+  const dayHeight = ((dayEnd - dayStart) / MIN) * PX_PER_MIN;
+  const marks = useMemo(() => hourMarks(dayStart, dayEnd), [dayStart, dayEnd]);
 
   const startIso = new Date(dayStart).toISOString();
   const endIso = new Date(dayEnd).toISOString();
@@ -117,7 +112,8 @@ export default function DayPage() {
 
   // Scroll to "now" (today) or 07:00 (other days) when the day changes.
   useEffect(() => {
-    const minutes = isToday ? (Date.now() - dayStart) / MIN - 120 : 7 * 60;
+    const target = isToday ? Date.now() - 2 * 60 * MIN : atLocalTime(dayStart, 7);
+    const minutes = (target - dayStart) / MIN;
     const t = setTimeout(() => contentRef.current?.scrollToPoint(0, Math.max(0, minutes * PX_PER_MIN), 300), 50);
     setSelectedId(null);
     return () => clearTimeout(t);
@@ -226,7 +222,7 @@ export default function DayPage() {
               type="date"
               tabIndex={-1}
               aria-hidden
-              value={`${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`}
+              value={localDateKey(day)}
               onChange={(e) => e.target.value && setDay(midnight(new Date(e.target.value + 'T00:00')))}
             />
           </IonTitle>
@@ -247,10 +243,14 @@ export default function DayPage() {
       </IonHeader>
 
       <IonContent ref={contentRef}>
-        <div className="day-view" style={{ height: DAY_HEIGHT }}>
-          {Array.from({ length: 24 }, (_, h) => (
-            <div key={h} className="hour-row" style={{ top: h * 60 * PX_PER_MIN, height: 60 * PX_PER_MIN }}>
-              <span className="hour-label">{h === 0 ? '' : new Date(dayStart + h * 60 * MIN).toLocaleTimeString([], { hour: 'numeric' })}</span>
+        <div className="day-view" style={{ height: dayHeight }}>
+          {marks.map((m, i) => (
+            <div
+              key={m.offsetMin}
+              className={`hour-row${m.shifted ? ' dst-shift' : ''}`}
+              style={{ top: m.offsetMin * PX_PER_MIN, height: 60 * PX_PER_MIN }}
+            >
+              <span className="hour-label">{i === 0 ? '' : m.label}</span>
             </div>
           ))}
 
@@ -312,7 +312,7 @@ export default function DayPage() {
           <IonFabButton
             aria-label="Add interval"
             onClick={() => {
-              const end = isToday ? Math.floor(Date.now() / (5 * MIN)) * 5 * MIN : dayStart + 12 * 60 * MIN;
+              const end = isToday ? Math.floor(Date.now() / (5 * MIN)) * 5 * MIN : atLocalTime(dayStart, 12);
               newIntervalAt(end - 30 * MIN);
             }}
           >

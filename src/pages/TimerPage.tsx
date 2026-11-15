@@ -11,21 +11,18 @@ import { setThemeColor, useActive, useAreas, useNow, useSubAreas } from '../hook
 import { formatDuration, stop, track } from '../timer';
 import { BACKGROUND_TINT, prefersDark, tintOverBackground } from '../color';
 import { iconFor } from '../icons';
+import { startOfLocalDay } from '../time';
 
 const haptic = () => navigator.vibrate?.(12);
 
-function startOfToday() {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
 
 export default function TimerPage() {
   const areas = useAreas();
   const allAreas = useAreas(true);
   const subAreas = useSubAreas();
   const active = useActive();
-  const now = useNow(1000, !!active);
+  // Tick every second while tracking, every minute otherwise (keeps "today" correct past midnight).
+  const now = useNow(active ? 1000 : 60_000);
 
   const activeArea = allAreas.find((a) => a.id === active?.areaId);
   const activeSub = subAreas.find((s) => s.id === active?.subAreaId);
@@ -38,7 +35,7 @@ export default function TimerPage() {
   useIonViewDidEnter(() => setThemeColor(statusColor), [statusColor]);
 
   // Today's totals (finished intervals + running one).
-  const dayStart = startOfToday().toISOString();
+  const dayStart = startOfLocalDay(now).toISOString();
   const todays = useLiveQuery(() => db.intervals.where('end').above(dayStart).toArray(), [dayStart]) ?? [];
   const totals = useMemo(() => {
     const m = new Map<string, number>();

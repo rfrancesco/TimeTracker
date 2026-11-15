@@ -10,6 +10,7 @@ import AreaEditor from '../components/AreaEditor';
 import { db, deleteTrackedTime, exportAll, importAll, nowIso, resetEverything, type Area } from '../db';
 import { useAreas, useSubAreas } from '../hooks';
 import { iconFor } from '../icons';
+import { localDateKey } from '../time';
 
 export default function SettingsPage() {
   const areas = useAreas();
@@ -33,7 +34,7 @@ export default function SettingsPage() {
   async function doExport() {
     const data = await exportAll();
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const name = `timetracker-${new Date().toISOString().slice(0, 10)}.json`;
+    const name = `timetracker-${localDateKey(Date.now())}.json`;
     const file = new File([blob], name, { type: 'application/json' });
     // Android share sheet if available (save to Drive, etc.), otherwise download.
     if (navigator.canShare?.({ files: [file] })) {
