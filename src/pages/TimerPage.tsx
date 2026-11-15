@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
-  IonButton, IonContent, IonHeader, IonIcon, IonPage, IonTitle, IonToolbar,
+  IonButton, IonContent, IonIcon, IonPage,
 } from '@ionic/react';
 import { stop as stopIcon } from 'ionicons/icons';
 import AreaPill from '../components/AreaPill';
@@ -51,11 +51,6 @@ export default function TimerPage() {
       className={`timer-page${activeArea ? ' tracking' : ''}`}
       style={activeArea ? { ['--area-color' as string]: activeArea.color } : undefined}
     >
-      <IonHeader className="ion-no-border">
-        <IonToolbar>
-          <IonTitle>Timer</IonTitle>
-        </IonToolbar>
-      </IonHeader>
       <IonContent>
         <div className="timer-layout">
           <section className="timer-display" aria-live="polite">

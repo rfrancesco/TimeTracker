@@ -106,6 +106,39 @@ class TrackerDB extends Dexie {
         if (m && a.color.toUpperCase() === m[0]) a.color = m[1];
       });
     });
+    // v6: user-chosen colours; Thesis moves right after Home (and takes the row
+    // break with it); Home gets a "Shower" sub-area. Customisations are respected.
+    this.version(6).upgrade(async (tx) => {
+      const moved: Record<string, [string, string]> = {
+        Sleep: ['#6048B9', '#041A40'], Work: ['#559AD4', '#3A6EA5'], Home: ['#25A37E', '#4A904E'],
+        Thesis: ['#DC701C', '#48A7D4'], Guitar: ['#BE2E34', '#AF2934'], Music: ['#79A23A', '#DB795B'],
+        Reading: ['#A35EC1', '#7A4093'], Cinema: ['#DC6D81', '#B574C9'],
+      };
+      const areas = tx.table('areas');
+      await areas.toCollection().modify((a: Area) => {
+        const m = moved[a.name];
+        if (m && a.color.toUpperCase() === m[0]) a.color = m[1];
+      });
+      const all: Area[] = await areas.toArray();
+      const home = all.find((a) => a.name === 'Home');
+      const thesis = all.find((a) => a.name === 'Thesis');
+      if (home && thesis && thesis.order === home.order - 1) {
+        await areas.update(thesis.id, { order: home.order });
+        await areas.update(home.id, { order: thesis.order });
+        if (home.breakAfter && !thesis.breakAfter) {
+          await areas.update(home.id, { breakAfter: false });
+          await areas.update(thesis.id, { breakAfter: true });
+        }
+      }
+      if (home) {
+        const subs = tx.table('subAreas');
+        const mine = await subs.where('areaId').equals(home.id).toArray();
+        if (!mine.some((x: SubArea) => x.name.toLowerCase() === 'shower')) {
+          const order = Math.max(-1, ...mine.map((x: SubArea) => x.order)) + 1;
+          await subs.add({ id: uuid(), areaId: home.id, name: 'Shower', order, updatedAt: nowIso() });
+        }
+      }
+    });
   }
 }
 
@@ -115,20 +148,21 @@ export const nowIso = () => new Date().toISOString();
 export const uuid = () => crypto.randomUUID();
 
 // [name, icon, colour, sub-areas, row break after]
-// Colours (chosen with the user): Sleep night-sky indigo, Work Windows-2000 steel
-// blue, Guitar deep red, Home relaxing seafoam. Validated as a categorical set in
-// dark mode and in the derived light mode: neighbours in this order (also the
-// stacking order in reports) pass the colour-vision checks, and every pair is
-// distinguishable with normal vision.
+// Colours (chosen with the user): Sleep #041A40 night sky, Work rgb(58,110,165)
+// (Windows 2000), Home relaxing sage, Thesis sky blue (calm, not a warning colour,
+// apart from hobby/relaxation colours), Guitar+Music a red family, Reading+Cinema a
+// purple family (grouped by hue, separated by lightness). Validated in both themes:
+// neighbours in this order (also the report stacking order) pass the colour-vision
+// checks, and neighbours are distinguishable with normal vision.
 const DEFAULT_AREAS: Array<[string, string, string, string[], boolean?]> = [
-  ['Sleep', 'moon', '#6048B9', []],
-  ['Work', 'briefcase', '#559AD4', []],
-  ['Thesis', 'school', '#DC701C', []],
-  ['Home', 'home', '#25A37E', ['Cleaning', 'Cooking', 'Errands'], true],
-  ['Guitar', 'musical-notes', '#BE2E34', ['Technique', 'Songs']],
-  ['Music', 'headset', '#79A23A', []],
-  ['Reading', 'book', '#A35EC1', []],
-  ['Cinema', 'film', '#DC6D81', []],
+  ['Sleep', 'moon', '#041A40', []],
+  ['Work', 'briefcase', '#3A6EA5', []],
+  ['Home', 'home', '#4A904E', ['Cleaning', 'Cooking', 'Errands', 'Shower']],
+  ['Thesis', 'school', '#48A7D4', [], true],
+  ['Guitar', 'musical-notes', '#AF2934', ['Technique', 'Songs']],
+  ['Music', 'headset', '#DB795B', []],
+  ['Reading', 'book', '#7A4093', []],
+  ['Cinema', 'film', '#B574C9', []],
 ];
 
 type Adder = { add: (item: never) => unknown };

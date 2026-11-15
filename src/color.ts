@@ -22,26 +22,31 @@ export function tintOverBackground(hex: string, amount: number, dark = prefersDa
   return formatHex(interpolate([background(dark), hex], 'rgb')(amount));
 }
 
-// Area colours are stored once (tuned for dark backgrounds). On light backgrounds
-// they are shown darker in OKLCH lightness with the same hue, then mapped back
-// into the sRGB gamut. The default palette was validated in both modes this way.
-const LIGHT_MODE_DARKEN = 0.12;
-const LIGHT_MODE_MIN_L = 0.432; // keeps dark colours (e.g. Sleep) inside the validated lightness band
-const lightCache = new Map<string, string>();
+// Area colours are stored exactly as chosen and shown unchanged in both themes,
+// except where they would be unreadable: a very dark colour is lifted on the dark
+// background (same hue, a little more chroma), a very light one is darkened on the
+// light background. The default set was validated in both themes with this rule.
+const DARK_MODE_MIN_L = 0.36;
+const DARK_MODE_MIN_C = 0.1;
+const LIGHT_MODE_MAX_L = 0.69;
+const shownCache = new Map<string, string>();
 
-export function lightModeVariant(hex: string) {
-  const key = hex.toUpperCase();
-  const cached = lightCache.get(key);
+function shownFor(hex: string, dark: boolean) {
+  const key = `${dark ? 'd' : 'l'}${hex.toUpperCase()}`;
+  const cached = shownCache.get(key);
   if (cached) return cached;
-  const c = toOklch(key);
-  let out = key;
+  const c = toOklch(hex);
+  let out = hex.toUpperCase();
   if (c) {
-    const target = Math.max(Math.min(c.l, LIGHT_MODE_MIN_L), c.l - LIGHT_MODE_DARKEN);
-    if (target < c.l) out = formatHex(clampChroma({ ...c, l: target }, 'oklch')).toUpperCase();
+    if (dark && c.l < DARK_MODE_MIN_L) {
+      out = formatHex(clampChroma({ ...c, l: DARK_MODE_MIN_L, c: Math.max(c.c, DARK_MODE_MIN_C) }, 'oklch'));
+    } else if (!dark && c.l > LIGHT_MODE_MAX_L) {
+      out = formatHex(clampChroma({ ...c, l: LIGHT_MODE_MAX_L }, 'oklch'));
+    }
   }
-  lightCache.set(key, out);
-  return out;
+  shownCache.set(key, out.toUpperCase());
+  return out.toUpperCase();
 }
 
 /** The colour to show for a stored area colour in the current theme. */
-export const displayColor = (hex: string, dark: boolean) => (dark ? hex : lightModeVariant(hex));
+export const displayColor = (hex: string, dark: boolean) => shownFor(hex, dark);

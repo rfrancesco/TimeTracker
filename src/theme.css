@@ -4,13 +4,11 @@
 }
 
 /* ---------- Timer page ---------- */
-.timer-page ion-content,
-.timer-page ion-toolbar {
+.timer-page ion-content {
   --background: var(--ion-background-color, #fff);
   transition: --background 300ms;
 }
-.timer-page.tracking ion-content,
-.timer-page.tracking ion-toolbar {
+.timer-page.tracking ion-content {
   --background: color-mix(in srgb, var(--area-color) 32%, var(--ion-background-color, #fff));
 }
 
@@ -19,7 +17,7 @@
   flex-direction: column;
   align-items: center;
   gap: 24px;
-  padding: 16px 16px calc(24px + env(safe-area-inset-bottom));
+  padding: calc(24px + env(safe-area-inset-top)) 16px calc(24px + env(safe-area-inset-bottom));
   min-height: 100%;
 }
 
