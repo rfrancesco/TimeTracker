@@ -1,15 +1,14 @@
-import { useEffect, useMemo } from 'react';
+import { useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
-  IonButton, IonContent, IonHeader, IonIcon, IonPage, IonTitle, IonToolbar, useIonViewDidEnter,
+  IonButton, IonContent, IonHeader, IonIcon, IonPage, IonTitle, IonToolbar,
 } from '@ionic/react';
 import { stop as stopIcon } from 'ionicons/icons';
 import AreaPill from '../components/AreaPill';
 import SubAreaChips from '../components/SubAreaChips';
 import { db } from '../db';
-import { setThemeColor, useActive, useAreas, useNow, useSubAreas } from '../hooks';
+import { useActive, useAreas, useNow, useSubAreas } from '../hooks';
 import { formatDuration, stop, track } from '../timer';
-import { BACKGROUND_TINT, prefersDark, tintOverBackground } from '../color';
 import { iconFor } from '../icons';
 import { startOfLocalDay } from '../time';
 
@@ -29,10 +28,6 @@ export default function TimerPage() {
   const subsOfActive = subAreas.filter((s) => s.areaId === active?.areaId && !s.archived);
   const elapsed = active ? now - new Date(active.start).getTime() : 0;
 
-  // Status bar follows the page tint.
-  const statusColor = activeArea ? tintOverBackground(activeArea.color, BACKGROUND_TINT) : prefersDark() ? '#121212' : '#ffffff';
-  useEffect(() => setThemeColor(statusColor), [statusColor]);
-  useIonViewDidEnter(() => setThemeColor(statusColor), [statusColor]);
 
   // Today's totals (finished intervals + running one).
   const dayStart = startOfLocalDay(now).toISOString();

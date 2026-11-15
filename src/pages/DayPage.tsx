@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
   IonButton, IonButtons, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonPage, IonTitle, IonToolbar,
   useIonToast,
 } from '@ionic/react';
-import { add, chevronBack, chevronForward, todayOutline } from 'ionicons/icons';
+import { add, chevronBack, chevronForward, removeOutline, addOutline, todayOutline } from 'ionicons/icons';
 import IntervalEditor, { type EditorValue } from '../components/IntervalEditor';
 import { db, type Interval } from '../db';
 import { ConstraintError, freeBounds, saveInterval } from '../constraints';
@@ -13,9 +13,22 @@ import { iconFor } from '../icons';
 import { formatDuration } from '../timer';
 import { MINUTE, addLocalDays, atLocalTime, hourMarks, localDateKey, startOfLocalDay } from '../time';
 
-const PX_PER_MIN = 1.2;
 const MIN = MINUTE;
-const SNAP_MIN = 5;
+/** Zoom range in pixels per minute (1.2 ≈ the whole day in ~29 screen heights of 60px/h). */
+const ZOOM_MIN = 1.2;
+const ZOOM_MAX = 8;
+/** Blocks shorter than this on screen are drawn as a marker + chip instead. */
+const TINY_PX = 26;
+const CHIP_H = 26;
+
+const clampZoom = (z: number) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
+const loadZoom = () => {
+  try {
+    return clampZoom(Number(localStorage.getItem('day.zoom')) || ZOOM_MIN);
+  } catch {
+    return ZOOM_MIN;
+  }
+};
 
 const midnight = startOfLocalDay;
 const addDays = addLocalDays;
@@ -69,6 +82,68 @@ export default function DayPage() {
   const toast = (message: string) => presentToast({ message, duration: 2200, position: 'bottom' });
   const contentRef = useRef<HTMLIonContentElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
+  const viewRef = useRef<HTMLDivElement>(null);
+
+  // ---- zoom (pinch or the +/- pill); scroll is kept anchored on the focal point ----
+  const [px, setPx] = useState(loadZoom);
+  const pxRef = useRef(px);
+  pxRef.current = px;
+  const pendingScroll = useRef<number | null>(null);
+
+  async function zoomTo(next: number, anchorClientY?: number) {
+    const z = clampZoom(next);
+    const scrollEl = await contentRef.current?.getScrollElement();
+    const view = viewRef.current;
+    if (!scrollEl || !view || z === pxRef.current) return;
+    const rect = scrollEl.getBoundingClientRect();
+    const anchor = anchorClientY ?? rect.top + rect.height / 2;
+    const viewTop = view.getBoundingClientRect().top;
+    const minute = (anchor - viewTop) / pxRef.current;
+    pendingScroll.current = scrollEl.scrollTop + viewTop - anchor + minute * z;
+    setPx(z);
+    try {
+      localStorage.setItem('day.zoom', String(z));
+    } catch {
+      /* ignore */
+    }
+  }
+  useLayoutEffect(() => {
+    const target = pendingScroll.current;
+    if (target === null) return;
+    pendingScroll.current = null;
+    contentRef.current?.getScrollElement().then((el) => (el.scrollTop = Math.max(0, target)));
+  }, [px]);
+
+  // Two-finger pinch on the timeline (native listeners: we must preventDefault).
+  useEffect(() => {
+    const el = viewRef.current;
+    if (!el) return;
+    let start: { dist: number; px: number } | null = null;
+    const dist = (t: TouchList) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+    const mid = (t: TouchList) => (t[0].clientY + t[1].clientY) / 2;
+    const onStart = (e: TouchEvent) => {
+      if (e.touches.length === 2) start = { dist: dist(e.touches), px: pxRef.current };
+    };
+    const onMove = (e: TouchEvent) => {
+      if (!start || e.touches.length !== 2) return;
+      e.preventDefault();
+      zoomTo(start.px * (dist(e.touches) / start.dist), mid(e.touches));
+    };
+    const onEnd = (e: TouchEvent) => {
+      if (e.touches.length < 2) start = null;
+    };
+    el.addEventListener('touchstart', onStart, { passive: true });
+    el.addEventListener('touchmove', onMove, { passive: false });
+    el.addEventListener('touchend', onEnd);
+    el.addEventListener('touchcancel', onEnd);
+    return () => {
+      el.removeEventListener('touchstart', onStart);
+      el.removeEventListener('touchmove', onMove);
+      el.removeEventListener('touchend', onEnd);
+      el.removeEventListener('touchcancel', onEnd);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const dateInputRef = useRef<HTMLInputElement>(null);
 
   const areas = useAreas(true);
@@ -80,7 +155,7 @@ export default function DayPage() {
   const dayEnd = addDays(day, 1).getTime();
   const isToday = dayStart === midnight(new Date(now)).getTime();
   // Real length of this local day: 23 h / 25 h on DST transition days.
-  const dayHeight = ((dayEnd - dayStart) / MIN) * PX_PER_MIN;
+  const dayHeight = ((dayEnd - dayStart) / MIN) * px;
   const marks = useMemo(() => hourMarks(dayStart, dayEnd), [dayStart, dayEnd]);
 
   const startIso = new Date(dayStart).toISOString();
@@ -112,13 +187,32 @@ export default function DayPage() {
     return layout(items);
   }, [intervals, draft, active, now, dayStart, dayEnd]);
 
+  // Screen geometry. Blocks too short to read become a thin marker at their true
+  // position plus a chip on the right half; chips are stacked so they never cover
+  // each other, and they don't make neighbouring blocks narrower.
+  const geometry = useMemo(() => {
+    const items = blocks.map((b) => {
+      const vs = Math.max(b.start, dayStart);
+      const ve = Math.min(b.end, dayEnd);
+      const top = ((vs - dayStart) / MIN) * px;
+      const height = ((ve - vs) / MIN) * px;
+      return { b, top, height, tiny: height < TINY_PX, chipTop: 0 };
+    });
+    let lastChipBottom = -Infinity;
+    for (const g of items.filter((x) => x.tiny).sort((a, c) => a.top - c.top)) {
+      g.chipTop = Math.max(g.top + g.height / 2 - CHIP_H / 2, lastChipBottom + 2, 0);
+      lastChipBottom = g.chipTop + CHIP_H;
+    }
+    return items;
+  }, [blocks, px, dayStart, dayEnd]);
+
   const totalMs = blocks.reduce((acc, b) => acc + Math.min(b.end, dayEnd) - Math.max(b.start, dayStart), 0);
 
   // Scroll to "now" (today) or 07:00 (other days) when the day changes.
   useEffect(() => {
     const target = isToday ? Date.now() - 2 * 60 * MIN : atLocalTime(dayStart, 7);
     const minutes = (target - dayStart) / MIN;
-    const t = setTimeout(() => contentRef.current?.scrollToPoint(0, Math.max(0, minutes * PX_PER_MIN), 300), 50);
+    const t = setTimeout(() => contentRef.current?.scrollToPoint(0, Math.max(0, minutes * pxRef.current), 300), 50);
     setSelectedId(null);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -159,8 +253,9 @@ export default function DayPage() {
       if (!d.moved) return;
       const bnd = bounds.current;
       if (!bnd) return;
-      const delta = Math.round(dy / PX_PER_MIN / SNAP_MIN) * SNAP_MIN * MIN;
-      const minLen = SNAP_MIN * MIN;
+      const snap = pxRef.current >= 4 ? 1 : 5;
+      const delta = Math.round(dy / pxRef.current / snap) * snap * MIN;
+      const minLen = snap * MIN;
       let s = d.s0;
       let en = d.e0;
       if (d.mode === 'move') {
@@ -254,7 +349,8 @@ export default function DayPage() {
       return;
     }
     const rect = gridRef.current!.getBoundingClientRect();
-    const minutes = Math.floor((e.clientY - rect.top) / PX_PER_MIN / 15) * 15;
+    const step = px >= 4 ? 5 : 15;
+    const minutes = Math.floor((e.clientY - rect.top) / px / step) * step;
     newIntervalAt(dayStart + minutes * MIN);
   }
 
@@ -298,53 +394,71 @@ export default function DayPage() {
       </IonHeader>
 
       <IonContent ref={contentRef}>
-        <div className="day-view" style={{ height: dayHeight }}>
+        <div className="day-view" ref={viewRef} style={{ height: dayHeight }}>
           {marks.map((m, i) => (
             <div
               key={m.offsetMin}
               className={`hour-row${m.shifted ? ' dst-shift' : ''}`}
-              style={{ top: m.offsetMin * PX_PER_MIN, height: 60 * PX_PER_MIN }}
+              style={{ top: m.offsetMin * px, height: 60 * px }}
             >
               <span className="hour-label">{i === 0 ? '' : m.label}</span>
+              {px >= 2.4 && <span className="half-hour" style={{ top: 30 * px }} />}
             </div>
           ))}
 
           <div className="day-grid" ref={gridRef} onClick={onGridClick}>
-            {blocks.map((b) => {
+            {geometry.map(({ b, top, height, tiny, chipTop }) => {
               const area = areas.find((a) => a.id === b.areaId);
-              const sub = subAreas.find((s) => s.id === b.subAreaId);
-              const vs = Math.max(b.start, dayStart);
-              const ve = Math.min(b.end, dayEnd);
-              const top = ((vs - dayStart) / MIN) * PX_PER_MIN;
-              const height = Math.max(18, ((ve - vs) / MIN) * PX_PER_MIN - 2);
+              const sub = subAreas.find((x) => x.id === b.subAreaId);
               const selected = selectedId === b.id;
+              const color = area?.color ?? '#888';
+              const label = `${area?.name ?? 'Unknown'}${sub ? ` · ${sub.name}` : ''}`;
+              const onClick = (e: React.MouseEvent) => {
+                e.stopPropagation();
+                if (b.active) openEditor(b);
+                else if (!selected) {
+                  navigator.vibrate?.(6);
+                  setSelectedId(b.id);
+                }
+              };
+              if (tiny) {
+                return (
+                  <div key={b.id} className="tiny-wrap">
+                    <div
+                      className={`tiny-marker${selected ? ' selected' : ''}`}
+                      style={{ top, height: Math.max(2, height), ['--area-color' as string]: color }}
+                    />
+                    <div
+                      className={`day-chip${selected ? ' selected' : ''}${b.active ? ' active' : ''}`}
+                      style={{ top: chipTop, height: CHIP_H, ['--area-color' as string]: color }}
+                      onClick={onClick}
+                      onPointerDown={(e) => beginDrag(e, b, 'move')}
+                      title={`${label} ${hhmm(b.start)}–${b.active ? 'now' : hhmm(b.end)}`}
+                    >
+                      {area && <IonIcon icon={iconFor(area.icon)} />}
+                      <span className="chip-name">{label}</span>
+                      <span className="chip-dur">{formatDuration(b.end - b.start, false)}</span>
+                    </div>
+                  </div>
+                );
+              }
               return (
                 <div
                   key={b.id}
-                  className={`day-block${selected ? ' selected' : ''}${b.active ? ' active' : ''}${height < 40 ? ' compact' : ''}`}
+                  className={`day-block${selected ? ' selected' : ''}${b.active ? ' active' : ''}${height < 44 ? ' compact' : ''}`}
                   style={{
                     top,
-                    height,
+                    height: height - 2,
                     left: `calc(${(b.lane / b.lanes) * 100}% + 2px)`,
                     width: `calc(${100 / b.lanes}% - 4px)`,
-                    ['--area-color' as string]: area?.color ?? '#888',
+                    ['--area-color' as string]: color,
                   }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (b.active) openEditor(b);
-                    else if (!selected) {
-                      navigator.vibrate?.(6);
-                      setSelectedId(b.id);
-                    }
-                  }}
+                  onClick={onClick}
                   onPointerDown={(e) => beginDrag(e, b, 'move')}
                 >
                   <div className="day-block-title">
                     {area && <IonIcon icon={iconFor(area.icon)} />}
-                    <span>
-                      {area?.name ?? 'Unknown'}
-                      {sub ? ` · ${sub.name}` : ''}
-                    </span>
+                    <span>{label}</span>
                   </div>
                   <div className="day-block-time">
                     {hhmm(b.start)} – {b.active ? 'now' : hhmm(b.end)} · {formatDuration(b.end - b.start, false)}
@@ -359,8 +473,17 @@ export default function DayPage() {
               );
             })}
 
-            {isToday && <div className="now-line" style={{ top: ((now - dayStart) / MIN) * PX_PER_MIN }} />}
+            {isToday && <div className="now-line" style={{ top: ((now - dayStart) / MIN) * px }} />}
           </div>
+        </div>
+
+        <div slot="fixed" className="zoom-pill">
+          <button aria-label="Zoom out" disabled={px <= ZOOM_MIN} onClick={() => zoomTo(px / 1.6)}>
+            <IonIcon icon={removeOutline} />
+          </button>
+          <button aria-label="Zoom in" disabled={px >= ZOOM_MAX} onClick={() => zoomTo(px * 1.6)}>
+            <IonIcon icon={addOutline} />
+          </button>
         </div>
 
         <IonFab slot="fixed" vertical="bottom" horizontal="end">
