@@ -42,7 +42,7 @@ export default function App() {
   const dark = useDarkMode();
   const areaColor = areas.find((a) => a.id === active?.areaId)?.color;
   useEffect(() => {
-    setThemeColor(areaColor ? tintOverBackground(areaColor, BACKGROUND_TINT) : dark ? '#1f1f1f' : '#ffffff');
+    setThemeColor(areaColor ? tintOverBackground(areaColor, BACKGROUND_TINT, dark) : dark ? '#1f1f1f' : '#ffffff');
   }, [areaColor, dark]);
 
   return (

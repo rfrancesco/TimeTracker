@@ -4,7 +4,7 @@ import {
   IonButton, IonButtons, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonPage, IonTitle, IonToolbar,
   useIonToast,
 } from '@ionic/react';
-import { add, chevronBack, chevronForward, removeOutline, addOutline, todayOutline } from 'ionicons/icons';
+import { add, chevronBack, chevronForward, documentTextOutline, removeOutline, addOutline, todayOutline } from 'ionicons/icons';
 import IntervalEditor, { type EditorValue } from '../components/IntervalEditor';
 import { db, type Interval } from '../db';
 import { ConstraintError, freeBounds, saveInterval } from '../constraints';
@@ -433,10 +433,11 @@ export default function DayPage() {
                       style={{ top: chipTop, height: CHIP_H, ['--area-color' as string]: color }}
                       onClick={onClick}
                       onPointerDown={(e) => beginDrag(e, b, 'move')}
-                      title={`${label} ${hhmm(b.start)}–${b.active ? 'now' : hhmm(b.end)}`}
+                      title={`${label} ${hhmm(b.start)}–${b.active ? 'now' : hhmm(b.end)}${b.note ? `\n${b.note}` : ''}`}
                     >
                       {area && <IonIcon icon={iconFor(area.icon)} />}
                       <span className="chip-name">{label}</span>
+                      {b.note && <IonIcon className="note-icon" icon={documentTextOutline} aria-label="Has a note" />}
                       <span className="chip-dur">{formatDuration(b.end - b.start, false)}</span>
                     </div>
                   </div>
@@ -459,10 +460,16 @@ export default function DayPage() {
                   <div className="day-block-title">
                     {area && <IonIcon icon={iconFor(area.icon)} />}
                     <span>{label}</span>
+                    {b.note && <IonIcon className="note-icon" icon={documentTextOutline} aria-label="Has a note" />}
                   </div>
                   <div className="day-block-time">
                     {hhmm(b.start)} – {b.active ? 'now' : hhmm(b.end)} · {formatDuration(b.end - b.start, false)}
                   </div>
+                  {b.note && height >= 62 && (
+                    <div className="day-block-note" style={{ WebkitLineClamp: Math.max(1, Math.floor((height - 46) / 16)) }}>
+                      {b.note}
+                    </div>
+                  )}
                   {selected && (
                     <>
                       <div className="handle top" onPointerDown={(e) => beginDrag(e, b, 'top')} />

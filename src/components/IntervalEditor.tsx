@@ -10,6 +10,7 @@ import { db } from '../db';
 import { ConstraintError, OverlapError, describeConflicts, saveInterval, updateActive } from '../constraints';
 import { useAreas, useSubAreas } from '../hooks';
 import { formatDuration } from '../timer';
+import { localDateKey } from '../time';
 
 export interface EditorValue {
   kind: 'new' | 'existing' | 'active';
@@ -26,13 +27,58 @@ interface Props {
   onClose: () => void;
 }
 
-/** epoch ms → "YYYY-MM-DDTHH:mm" in local time, for <input type="datetime-local">. */
-const toLocalInput = (ms: number) => {
+const pad = (n: number) => String(n).padStart(2, '0');
+const timeKey = (ms: number) => {
   const d = new Date(ms);
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 };
-const fromLocalInput = (s: string) => new Date(s).getTime(); // parsed as local time
+/** Local date + local time → epoch ms (the browser resolves DST gaps). */
+const combine = (date: string, time: string) => new Date(`${date}T${time}`).getTime();
+
+/** Open the platform picker on tap (Android: the system date dialog / clock dial). */
+const openPicker = (e: React.MouseEvent<HTMLIonInputElement>) =>
+  e.currentTarget.getInputElement().then((el) => {
+    try {
+      el.showPicker?.();
+    } catch {
+      /* not allowed or unsupported: the browser's default handling applies */
+    }
+  });
+
+/** A date field and a time field side by side, both native inputs. */
+function DateTimeField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  onChange: (ms: number, part: 'date' | 'time') => void;
+}) {
+  const date = localDateKey(value);
+  const time = timeKey(value);
+  return (
+    <IonItem className="datetime-field">
+      <span slot="start" className="datetime-label">{label}</span>
+      <IonInput
+        aria-label={`${label} date`}
+        type="date"
+        className="date-input"
+        value={date}
+        onClick={openPicker}
+        onIonInput={(e) => e.detail.value && onChange(combine(String(e.detail.value), time), 'date')}
+      />
+      <IonInput
+        aria-label={`${label} time`}
+        type="time"
+        className="time-input"
+        value={time}
+        onClick={openPicker}
+        onIonInput={(e) => e.detail.value && onChange(combine(date, String(e.detail.value)), 'time')}
+      />
+    </IonItem>
+  );
+}
 
 export default function IntervalEditor({ value, onClose }: Props) {
   const areas = useAreas();
@@ -149,26 +195,16 @@ export default function IntervalEditor({ value, onClose }: Props) {
 
             <IonList inset={false}>
               <IonListHeader>Time</IonListHeader>
-              <IonItem>
-                <IonInput
-                  label="Start"
-                  labelPlacement="stacked"
-                  type="datetime-local"
-                  value={toLocalInput(v.start)}
-                  onIonInput={(e) => setV({ ...v, start: fromLocalInput(String(e.detail.value)) })}
-                />
-              </IonItem>
-              {!isActive && (
-                <IonItem>
-                  <IonInput
-                    label="End"
-                    labelPlacement="stacked"
-                    type="datetime-local"
-                    value={toLocalInput(v.end)}
-                    onIonInput={(e) => setV({ ...v, end: fromLocalInput(String(e.detail.value)) })}
-                  />
-                </IonItem>
-              )}
+              <DateTimeField
+                label="Start"
+                value={v.start}
+                onChange={(ms, part) =>
+                  // Moving the start to another day takes the end along (same duration);
+                  // changing only the time leaves the end where it is.
+                  setV({ ...v, start: ms, end: part === 'date' && !isActive ? v.end + (ms - v.start) : v.end })
+                }
+              />
+              {!isActive && <DateTimeField label="End" value={v.end} onChange={(ms) => setV({ ...v, end: ms })} />}
               <IonItem lines="none">
                 <IonText color={valid ? 'medium' : 'danger'}>
                   <p className="duration-hint">

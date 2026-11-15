@@ -53,6 +53,7 @@
 
 /* Icon-only area selector: one rounded surface, rows separated by a hairline. */
 .area-pills {
+  margin-inline: auto;
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -96,7 +97,6 @@
 .area-pill-btn.selected {
   background: var(--area-color);
   color: #fff;
-  transform: scale(1.04);
 }
 
 /* Sub-area chips */
@@ -513,7 +513,7 @@ ion-item.row-break { --border-width: 0 0 3px 0; }
   font-size: 0.75rem;
   font-weight: 600;
   white-space: nowrap;
-  z-index: 4;
+  z-index: 5; /* above the now-line (4) */
   cursor: pointer;
   user-select: none;
   -webkit-user-select: none;
@@ -548,12 +548,48 @@ ion-item.row-break { --border-width: 0 0 3px 0; }
 .zoom-pill button:disabled { opacity: 0.3; }
 .zoom-pill button + button { border-left: 1px solid color-mix(in srgb, var(--ion-text-color, #000) 12%, transparent); }
 
-/* Tab bar carries the running timer's colour on every page */
+/* Tab bar carries the running timer's colour on every page. It is a step
+   stronger than the Timer page tint, with a hairline in the area colour, so it
+   stays visibly separate from the content above it. */
 ion-tab-bar.tracking {
-  --background: color-mix(in srgb, var(--area-color) 32%, var(--ion-background-color, #fff));
-  --color: color-mix(in srgb, var(--ion-text-color, #000) 70%, transparent);
+  --background: color-mix(in srgb, var(--area-color) 46%, var(--ion-background-color, #fff));
+  --color: color-mix(in srgb, var(--ion-text-color, #000) 72%, transparent);
   --color-selected: var(--ion-text-color, #000);
-  border-top-color: transparent;
-  transition: background 300ms;
+  --border: 1px solid color-mix(in srgb, var(--area-color) 70%, var(--ion-background-color, #fff));
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.18);
 }
 ion-tab-bar.tracking ion-tab-button[tab="timer"] ion-label { font-variant-numeric: tabular-nums; font-weight: 600; }
+
+/* Smoother tab switches: Material-style fade-through on the incoming page.
+   Ionic shows/hides tab pages with .ion-page-hidden, so the animation runs
+   each time a page becomes visible. */
+@keyframes page-fade-through {
+  from { opacity: 0; transform: scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+ion-tabs .ion-page:not(.ion-page-hidden) {
+  animation: page-fade-through 220ms cubic-bezier(0.2, 0, 0, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  ion-tabs .ion-page:not(.ion-page-hidden) { animation: none; }
+}
+
+/* Interval editor: native date + time fields */
+.datetime-field .datetime-label { width: 3.2em; color: var(--viz-muted); margin-inline-end: 8px; }
+.datetime-field .date-input { flex: 1.5; }
+.datetime-field .time-input { flex: 1; text-align: end; }
+
+/* Notes in the day view */
+.day-block-title .note-icon, .day-chip .note-icon { flex: 0 0 auto; font-size: 13px; opacity: 0.85; }
+.day-block-title span { overflow: hidden; text-overflow: ellipsis; }
+.day-block-note {
+  margin-top: 3px;
+  font-size: 0.75rem;
+  font-style: italic;
+  opacity: 0.85;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: normal;
+  line-height: 16px;
+}
