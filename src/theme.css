@@ -52,6 +52,13 @@
 .timer-since { color: var(--ion-color-step-600, var(--ion-text-color-step-400, #888)); font-size: 0.95rem; }
 
 /* Icon-only pill selector */
+.area-pills {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+}
 .area-pill {
   display: flex;
   gap: 2px;
@@ -285,6 +292,8 @@
 .duration-hint { margin: 4px 0; font-size: 0.85rem; }
 
 /* ---------- Settings ---------- */
+ion-item.row-break { --border-width: 0 0 3px 0; }
+.row-break-note { font-size: 0.75rem; }
 .area-preview { display: grid; place-items: center; padding: 20px 0 4px; }
 .area-preview-icon {
   width: 72px;

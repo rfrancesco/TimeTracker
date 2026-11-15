@@ -12,6 +12,8 @@ export interface Area {
   icon: string; // key in ICONS (src/icons.ts)
   color: string; // hex
   order: number;
+  /** Start a new row in the area selector after this area. */
+  breakAfter?: boolean;
   archived?: boolean;
   updatedAt: string;
 }
@@ -57,6 +59,13 @@ class TrackerDB extends Dexie {
       intervals: 'id, start, end, areaId',
       active: 'key',
     });
+    // v2: row breaks in the area selector. Existing installs get one after "Home".
+    this.version(2).upgrade(async (tx) => {
+      const areas = tx.table('areas');
+      if ((await areas.filter((a) => !!a.breakAfter).count()) === 0) {
+        await areas.filter((a) => a.name === 'Home').modify({ breakAfter: true });
+      }
+    });
   }
 }
 
@@ -65,11 +74,12 @@ export const db = new TrackerDB();
 export const nowIso = () => new Date().toISOString();
 export const uuid = () => crypto.randomUUID();
 
-const DEFAULT_AREAS: Array<[string, string, string, string[]]> = [
+// [name, icon, colour, sub-areas, row break after]
+const DEFAULT_AREAS: Array<[string, string, string, string[], boolean?]> = [
   ['Sleep', 'moon', '#5C6BC0', []],
   ['Work', 'briefcase', '#1E88E5', []],
   ['Thesis', 'school', '#00897B', []],
-  ['Home', 'home', '#43A047', ['Cleaning', 'Cooking', 'Errands']],
+  ['Home', 'home', '#43A047', ['Cleaning', 'Cooking', 'Errands'], true],
   ['Guitar', 'musical-notes', '#F4511E', ['Technique', 'Songs']],
   ['Music', 'headset', '#D81B60', []],
   ['Reading', 'book', '#8E24AA', []],
@@ -81,9 +91,9 @@ type Adder = { add: (item: never) => unknown };
 /** Insert the default areas; works both inside 'populate' and in a normal transaction. */
 function seedDefaults(areas: Adder, subAreas: Adder) {
   const t = nowIso();
-  DEFAULT_AREAS.forEach(([name, icon, color, subs], i) => {
+  DEFAULT_AREAS.forEach(([name, icon, color, subs, breakAfter], i) => {
     const id = uuid();
-    areas.add({ id, name, icon, color, order: i, updatedAt: t } as never);
+    areas.add({ id, name, icon, color, order: i, ...(breakAfter && { breakAfter }), updatedAt: t } as never);
     subs.forEach((s, j) =>
       subAreas.add({ id: uuid(), areaId: id, name: s, order: j, updatedAt: t } as never),
     );

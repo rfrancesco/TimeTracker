@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   IonButton, IonButtons, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonList, IonListHeader,
-  IonModal, IonTitle, IonToolbar, useIonAlert,
+  IonModal, IonTitle, IonToggle, IonToolbar, useIonAlert,
 } from '@ionic/react';
 import { add, close, closeCircle, trashOutline } from 'ionicons/icons';
 import { db, nowIso, uuid, type Area, type SubArea } from '../db';
@@ -22,6 +22,7 @@ export default function AreaEditor({ area, onClose }: Props) {
   const [name, setName] = useState('');
   const [icon, setIcon] = useState('sparkles');
   const [color, setColor] = useState(PALETTE[5]);
+  const [breakAfter, setBreakAfter] = useState(false);
   const [subs, setSubs] = useState<SubDraft[]>([]);
   const [removedSubs, setRemovedSubs] = useState<string[]>([]);
   const [presentAlert] = useIonAlert();
@@ -33,11 +34,13 @@ export default function AreaEditor({ area, onClose }: Props) {
       setName('');
       setIcon('sparkles');
       setColor(PALETTE[Math.floor(Math.random() * PALETTE.length)]);
+      setBreakAfter(false);
       setSubs([]);
     } else {
       setName(area.name);
       setIcon(area.icon);
       setColor(area.color);
+      setBreakAfter(!!area.breakAfter);
       db.subAreas
         .where('areaId')
         .equals(area.id)
@@ -56,10 +59,10 @@ export default function AreaEditor({ area, onClose }: Props) {
       if (area === 'new') {
         areaId = uuid();
         const order = (await db.areas.count()) ?? 0;
-        await db.areas.add({ id: areaId, name: name.trim(), icon, color, order, updatedAt: t });
+        await db.areas.add({ id: areaId, name: name.trim(), icon, color, order, breakAfter, updatedAt: t });
       } else {
         areaId = area.id;
-        await db.areas.update(areaId, { name: name.trim(), icon, color, updatedAt: t });
+        await db.areas.update(areaId, { name: name.trim(), icon, color, breakAfter, updatedAt: t });
       }
       const kept = subs.filter((s) => s.name.trim());
       for (const [i, s] of kept.entries()) {
@@ -135,6 +138,11 @@ export default function AreaEditor({ area, onClose }: Props) {
               value={name}
               onIonInput={(e) => setName(String(e.detail.value ?? ''))}
             />
+          </IonItem>
+          <IonItem>
+            <IonToggle checked={breakAfter} onIonChange={(e) => setBreakAfter(e.detail.checked)}>
+              Start a new row after this area
+            </IonToggle>
           </IonItem>
         </IonList>
 

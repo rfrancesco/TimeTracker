@@ -148,7 +148,13 @@ export default function SettingsPage() {
             {areas.map((a) => {
               const subs = subAreas.filter((s) => s.areaId === a.id && !s.archived);
               return (
-                <IonItem key={a.id} button detail={false} onClick={() => setEditing(a)}>
+                <IonItem
+                  key={a.id}
+                  button
+                  detail={false}
+                  className={a.breakAfter ? 'row-break' : undefined}
+                  onClick={() => setEditing(a)}
+                >
                   <span slot="start" className="area-avatar" style={{ background: a.color }}>
                     <IonIcon icon={iconFor(a.icon)} />
                   </span>
@@ -156,6 +162,9 @@ export default function SettingsPage() {
                     <h3>{a.name}</h3>
                     {subs.length > 0 && <p>{subs.map((s) => s.name).join(', ')}</p>}
                   </IonLabel>
+                  {a.breakAfter && (
+                    <IonNote slot="end" className="row-break-note">new row ↵</IonNote>
+                  )}
                   <IonReorder slot="end" />
                 </IonItem>
               );
