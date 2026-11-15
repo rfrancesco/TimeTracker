@@ -47,7 +47,7 @@ function fromOklab(L: number, a: number, b: number) {
 }
 
 const LIGHT_MODE_DARKEN = 0.12;
-const LIGHT_MODE_MIN_L = 0.42;
+const LIGHT_MODE_MIN_L = 0.432; // keeps dark colours (e.g. Sleep) inside the validated lightness band
 const lightCache = new Map<string, string>();
 
 export function lightModeVariant(hex: string) {

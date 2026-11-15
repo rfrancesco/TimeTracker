@@ -89,6 +89,23 @@ class TrackerDB extends Dexie {
       await intervals.bulkAdd(fixed.intervals);
       if (fixed.active) await activeT.put(fixed.active);
     });
+    // v5: new default colours. Only areas still on the previous default change.
+    this.version(5).upgrade(async (tx) => {
+      const moved: Record<string, [string, string]> = {
+        Sleep: ['#9085E9', '#6048B9'],
+        Work: ['#0CA30C', '#559AD4'],
+        Thesis: ['#E66767', '#DC701C'],
+        Home: ['#3987E5', '#25A37E'],
+        Guitar: ['#D95926', '#BE2E34'],
+        Music: ['#199E70', '#79A23A'],
+        Reading: ['#C98500', '#A35EC1'],
+        Cinema: ['#D55181', '#DC6D81'],
+      };
+      await tx.table('areas').toCollection().modify((a: Area) => {
+        const m = moved[a.name];
+        if (m && a.color.toUpperCase() === m[0]) a.color = m[1];
+      });
+    });
   }
 }
 
@@ -98,18 +115,20 @@ export const nowIso = () => new Date().toISOString();
 export const uuid = () => crypto.randomUUID();
 
 // [name, icon, colour, sub-areas, row break after]
-// Colours: an 8-hue categorical palette validated for colour-vision deficiency and
-// contrast in light and dark mode, assigned so that neighbours in this order (which
-// is also the stacking order in reports) stay distinguishable.
+// Colours (chosen with the user): Sleep night-sky indigo, Work Windows-2000 steel
+// blue, Guitar deep red, Home relaxing seafoam. Validated as a categorical set in
+// dark mode and in the derived light mode: neighbours in this order (also the
+// stacking order in reports) pass the colour-vision checks, and every pair is
+// distinguishable with normal vision.
 const DEFAULT_AREAS: Array<[string, string, string, string[], boolean?]> = [
-  ['Sleep', 'moon', '#9085E9', []],
-  ['Work', 'briefcase', '#0CA30C', []],
-  ['Thesis', 'school', '#E66767', []],
-  ['Home', 'home', '#3987E5', ['Cleaning', 'Cooking', 'Errands'], true],
-  ['Guitar', 'musical-notes', '#D95926', ['Technique', 'Songs']],
-  ['Music', 'headset', '#199E70', []],
-  ['Reading', 'book', '#C98500', []],
-  ['Cinema', 'film', '#D55181', []],
+  ['Sleep', 'moon', '#6048B9', []],
+  ['Work', 'briefcase', '#559AD4', []],
+  ['Thesis', 'school', '#DC701C', []],
+  ['Home', 'home', '#25A37E', ['Cleaning', 'Cooking', 'Errands'], true],
+  ['Guitar', 'musical-notes', '#BE2E34', ['Technique', 'Songs']],
+  ['Music', 'headset', '#79A23A', []],
+  ['Reading', 'book', '#A35EC1', []],
+  ['Cinema', 'film', '#DC6D81', []],
 ];
 
 type Adder = { add: (item: never) => unknown };

@@ -19,6 +19,6 @@ export const iconFor = (key: string) => ICONS[key] ?? ICONS.sparkles;
 
 /** Colour choices: the validated categorical hues first, then extras. */
 export const PALETTE = [
-  '#3987E5', '#D95926', '#199E70', '#C98500', '#D55181', '#0CA30C', '#9085E9', '#E66767',
-  '#5E35B1', '#00ACC1', '#7CB342', '#FB8C00', '#8E24AA', '#6D4C41', '#757575', '#546E7A',
-];
+  '#6048B9', '#559AD4', '#DC701C', '#25A37E', '#BE2E34', '#79A23A', '#A35EC1', '#DC6D81',
+  '#3987E5', '#C98500', '#D55181', '#199E70', '#0CA30C', '#00ACC1', '#6D4C41', '#757575',
+]
