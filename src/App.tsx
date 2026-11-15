@@ -26,7 +26,7 @@ setupIonicReact();
 export default function App() {
   return (
     <IonApp>
-      <IonReactRouter>
+      <IonReactRouter basename={import.meta.env.BASE_URL.replace(/\/$/, '')}>
         <IonTabs>
           <IonRouterOutlet>
             <Route path="/timer" element={<TimerPage />} />
