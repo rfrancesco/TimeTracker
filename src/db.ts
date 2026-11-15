@@ -66,6 +66,18 @@ class TrackerDB extends Dexie {
         await areas.filter((a) => a.name === 'Home').modify({ breakAfter: true });
       }
     });
+    // v3: colour-blind-safe default colours. Only areas still on an old default change.
+    this.version(3).upgrade(async (tx) => {
+      const moved: Record<string, [string, string]> = {
+        Sleep: ['#5C6BC0', '#9085E9'], Work: ['#1E88E5', '#0CA30C'], Thesis: ['#00897B', '#E66767'],
+        Home: ['#43A047', '#3987E5'], Guitar: ['#F4511E', '#D95926'], Music: ['#D81B60', '#199E70'],
+        Reading: ['#8E24AA', '#C98500'], Cinema: ['#FFB300', '#D55181'],
+      };
+      await tx.table('areas').toCollection().modify((a: Area) => {
+        const m = moved[a.name];
+        if (m && a.color.toUpperCase() === m[0]) a.color = m[1];
+      });
+    });
   }
 }
 
@@ -75,15 +87,18 @@ export const nowIso = () => new Date().toISOString();
 export const uuid = () => crypto.randomUUID();
 
 // [name, icon, colour, sub-areas, row break after]
+// Colours: an 8-hue categorical palette validated for colour-vision deficiency and
+// contrast in light and dark mode, assigned so that neighbours in this order (which
+// is also the stacking order in reports) stay distinguishable.
 const DEFAULT_AREAS: Array<[string, string, string, string[], boolean?]> = [
-  ['Sleep', 'moon', '#5C6BC0', []],
-  ['Work', 'briefcase', '#1E88E5', []],
-  ['Thesis', 'school', '#00897B', []],
-  ['Home', 'home', '#43A047', ['Cleaning', 'Cooking', 'Errands'], true],
-  ['Guitar', 'musical-notes', '#F4511E', ['Technique', 'Songs']],
-  ['Music', 'headset', '#D81B60', []],
-  ['Reading', 'book', '#8E24AA', []],
-  ['Cinema', 'film', '#FFB300', []],
+  ['Sleep', 'moon', '#9085E9', []],
+  ['Work', 'briefcase', '#0CA30C', []],
+  ['Thesis', 'school', '#E66767', []],
+  ['Home', 'home', '#3987E5', ['Cleaning', 'Cooking', 'Errands'], true],
+  ['Guitar', 'musical-notes', '#D95926', ['Technique', 'Songs']],
+  ['Music', 'headset', '#199E70', []],
+  ['Reading', 'book', '#C98500', []],
+  ['Cinema', 'film', '#D55181', []],
 ];
 
 type Adder = { add: (item: never) => unknown };

@@ -17,8 +17,8 @@ export const ICONS: Record<string, string> = {
 
 export const iconFor = (key: string) => ICONS[key] ?? ICONS.sparkles;
 
+/** Colour choices: the validated categorical hues first, then extras. */
 export const PALETTE = [
-  '#E53935', '#D81B60', '#8E24AA', '#5E35B1', '#5C6BC0', '#1E88E5', '#039BE5', '#00ACC1',
-  '#00897B', '#43A047', '#7CB342', '#C0CA33', '#FDD835', '#FFB300', '#FB8C00', '#F4511E',
-  '#6D4C41', '#757575', '#546E7A',
+  '#3987E5', '#D95926', '#199E70', '#C98500', '#D55181', '#0CA30C', '#9085E9', '#E66767',
+  '#5E35B1', '#00ACC1', '#7CB342', '#FB8C00', '#8E24AA', '#6D4C41', '#757575', '#546E7A',
 ];
