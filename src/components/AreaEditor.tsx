@@ -4,11 +4,13 @@ import {
   IonModal, IonTitle, IonToggle, IonToolbar, useIonAlert,
 } from '@ionic/react';
 import { add, close, closeCircle, trashOutline } from 'ionicons/icons';
-import { db, nowIso, uuid, type Area, type SubArea } from '../db';
+import { db, nowIso, uuid, type SubArea } from '../db';
+import { useDarkMode, type AreaView } from '../hooks';
+import { displayColor } from '../color';
 import { ICONS, PALETTE } from '../icons';
 
 interface Props {
-  area: Area | 'new' | null;
+  area: AreaView | 'new' | null;
   onClose: () => void;
 }
 
@@ -26,6 +28,8 @@ export default function AreaEditor({ area, onClose }: Props) {
   const [subs, setSubs] = useState<SubDraft[]>([]);
   const [removedSubs, setRemovedSubs] = useState<string[]>([]);
   const [presentAlert] = useIonAlert();
+  const dark = useDarkMode();
+  const shown = displayColor(color, dark);
 
   useEffect(() => {
     if (!area) return;
@@ -39,7 +43,7 @@ export default function AreaEditor({ area, onClose }: Props) {
     } else {
       setName(area.name);
       setIcon(area.icon);
-      setColor(area.color);
+      setColor(area.baseColor);
       setBreakAfter(!!area.breakAfter);
       db.subAreas
         .where('areaId')
@@ -126,7 +130,7 @@ export default function AreaEditor({ area, onClose }: Props) {
         </IonToolbar>
       </IonHeader>
       <IonContent>
-        <div className="area-preview" style={{ ['--area-color' as string]: color }}>
+        <div className="area-preview" style={{ ['--area-color' as string]: shown }}>
           <span className="area-preview-icon"><IonIcon icon={ICONS[icon]} /></span>
         </div>
         <IonList>
@@ -154,14 +158,14 @@ export default function AreaEditor({ area, onClose }: Props) {
               type="button"
               aria-label={c}
               className={`swatch${c === color ? ' selected' : ''}`}
-              style={{ background: c }}
+              style={{ background: displayColor(c, dark) }}
               onClick={() => setColor(c)}
             />
           ))}
         </div>
 
         <IonListHeader>Icon</IonListHeader>
-        <div className="icon-grid" style={{ ['--area-color' as string]: color }}>
+        <div className="icon-grid" style={{ ['--area-color' as string]: shown }}>
           {Object.entries(ICONS).map(([key, ic]) => (
             <button
               key={key}

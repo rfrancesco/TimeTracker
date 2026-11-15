@@ -1,4 +1,5 @@
 import Dexie, { type EntityTable } from 'dexie';
+import { normalize } from './constraints';
 
 /**
  * Data model.
@@ -78,6 +79,16 @@ class TrackerDB extends Dexie {
         if (m && a.color.toUpperCase() === m[0]) a.color = m[1];
       });
     });
+    // v4: enforce the no-overlap invariant (see constraints.ts) on existing data.
+    this.version(4).upgrade(async (tx) => {
+      const intervals = tx.table('intervals');
+      const activeT = tx.table('active');
+      const fixed = normalize(await intervals.toArray(), await activeT.get('current'), Date.now());
+      if (!fixed.changed) return;
+      await intervals.clear();
+      await intervals.bulkAdd(fixed.intervals);
+      if (fixed.active) await activeT.put(fixed.active);
+    });
   }
 }
 
@@ -156,12 +167,15 @@ export async function exportAll() {
   };
 }
 
+/** Replace everything with a backup. Returns how many records had to be fixed for overlaps. */
 export async function importAll(data: Awaited<ReturnType<typeof exportAll>>) {
+  const fixed = normalize(data.intervals, data.active?.[0], Date.now());
   await db.transaction('rw', [db.areas, db.subAreas, db.intervals, db.active], async () => {
     await Promise.all([db.areas.clear(), db.subAreas.clear(), db.intervals.clear(), db.active.clear()]);
     await db.areas.bulkAdd(data.areas);
     await db.subAreas.bulkAdd(data.subAreas);
-    await db.intervals.bulkAdd(data.intervals);
-    if (data.active?.length) await db.active.bulkAdd(data.active);
+    await db.intervals.bulkAdd(fixed.intervals);
+    if (fixed.active) await db.active.put(fixed.active);
   });
+  return fixed.changed;
 }

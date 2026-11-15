@@ -2,10 +2,12 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
   IonButton, IonButtons, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonPage, IonTitle, IonToolbar,
+  useIonToast,
 } from '@ionic/react';
 import { add, chevronBack, chevronForward, todayOutline } from 'ionicons/icons';
 import IntervalEditor, { type EditorValue } from '../components/IntervalEditor';
-import { db, nowIso, type Interval } from '../db';
+import { db, type Interval } from '../db';
+import { ConstraintError, freeBounds, saveInterval } from '../constraints';
 import { useActive, useAreas, useNow, useSubAreas } from '../hooks';
 import { iconFor } from '../icons';
 import { formatDuration } from '../timer';
@@ -63,6 +65,8 @@ export default function DayPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draft, setDraft] = useState<{ id: string; start: number; end: number } | null>(null);
   const [editing, setEditing] = useState<EditorValue | null>(null);
+  const [presentToast] = useIonToast();
+  const toast = (message: string) => presentToast({ message, duration: 2200, position: 'bottom' });
   const contentRef = useRef<HTMLIonContentElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
   const dateInputRef = useRef<HTMLInputElement>(null);
@@ -121,6 +125,22 @@ export default function DayPage() {
   }, [dayStart]);
 
   // ---- drag / resize of the selected block ----
+  // Free space around the selected interval: drags and resizes are clamped to it,
+  // so a block can never be pushed into a neighbour, the running timer, or the future.
+  const bounds = useRef<{ min: number; max: number } | null>(null);
+  useEffect(() => {
+    bounds.current = null;
+    const iv = intervals.find((i) => i.id === selectedId);
+    if (!iv) return;
+    let live = true;
+    freeBounds(iv.id, new Date(iv.start).getTime(), new Date(iv.end).getTime()).then((b) => {
+      if (live) bounds.current = b;
+    });
+    return () => {
+      live = false;
+    };
+  }, [selectedId, intervals]);
+
   const drag = useRef<{ id: string; mode: DragMode; y0: number; s0: number; e0: number; moved: boolean } | null>(null);
   const suppressClickUntil = useRef(0);
   const draftRef = useRef(draft);
@@ -137,14 +157,18 @@ export default function DayPage() {
       const dy = ev.clientY - d.y0;
       if (Math.abs(dy) > 4) d.moved = true;
       if (!d.moved) return;
+      const bnd = bounds.current;
+      if (!bnd) return;
       const delta = Math.round(dy / PX_PER_MIN / SNAP_MIN) * SNAP_MIN * MIN;
+      const minLen = SNAP_MIN * MIN;
       let s = d.s0;
       let en = d.e0;
       if (d.mode === 'move') {
-        s += delta;
-        en += delta;
-      } else if (d.mode === 'top') s = Math.min(d.s0 + delta, d.e0 - SNAP_MIN * MIN);
-      else en = Math.max(d.e0 + delta, d.s0 + SNAP_MIN * MIN);
+        const dd = Math.min(Math.max(delta, bnd.min - d.s0), bnd.max - d.e0);
+        s += dd;
+        en += dd;
+      } else if (d.mode === 'top') s = Math.min(Math.max(d.s0 + delta, bnd.min), d.e0 - minLen);
+      else en = Math.max(Math.min(d.e0 + delta, bnd.max), d.s0 + minLen);
       setDraft({ id: d.id, start: s, end: en });
     };
     const onUp = async () => {
@@ -158,13 +182,19 @@ export default function DayPage() {
         // The browser fires a click after pointerup; don't let it deselect.
         suppressClickUntil.current = Date.now() + 400;
         navigator.vibrate?.(8);
-        await db.intervals.update(dr.id, {
-          start: new Date(dr.start).toISOString(),
-          end: new Date(dr.end).toISOString(),
-          updatedAt: nowIso(),
-        });
+        const iv = await db.intervals.get(dr.id);
+        try {
+          if (iv) {
+            await saveInterval({ id: iv.id, areaId: iv.areaId, subAreaId: iv.subAreaId, note: iv.note, start: dr.start, end: dr.end });
+          }
+        } catch (err) {
+          // Clamping should prevent this; if data changed underneath, snap back.
+          toast(err instanceof ConstraintError ? `Not moved: ${err.message.toLowerCase()}` : 'Not moved');
+        }
         setDraft(null);
-      } else if (d && d.mode === 'move') {
+      } else if (d) {
+        // A tap without movement opens the editor, even on a resize handle
+        // (on short blocks the handles cover most of the block).
         openEditor(b);
       }
     };
@@ -186,10 +216,35 @@ export default function DayPage() {
     });
   }
 
-  function newIntervalAt(startMs: number) {
+  /** Busy spans known on screen (saved intervals + running timer). */
+  const busy = () => blocks.map((b) => ({ start: b.start, end: b.active ? Infinity : b.end }));
+
+  function openNew(start: number, end: number) {
     const first = areas.find((a) => !a.archived);
     if (!first) return;
-    setEditing({ kind: 'new', areaId: first.id, subAreaId: null, start: startMs, end: startMs + 30 * MIN });
+    setEditing({ kind: 'new', areaId: first.id, subAreaId: null, start, end });
+  }
+
+  /** New interval starting at (or just after) `at`, up to 30 min, within free time. */
+  function newIntervalAt(at: number) {
+    const now = Date.now();
+    let start = at;
+    for (const b of busy()) if (b.start <= start && b.end > start) start = b.end;
+    if (start >= now) return toast('Can’t add time in the future');
+    const next = Math.min(now, ...busy().filter((b) => b.start >= start).map((b) => b.start));
+    const end = Math.min(start + 30 * MIN, next);
+    if (end - start < MIN) return toast('No free time here');
+    openNew(start, end);
+  }
+
+  /** New interval ending at (or just before) `at`, up to 30 min, within free time. */
+  function newIntervalEndingAt(at: number) {
+    let end = Math.min(at, Date.now());
+    for (const b of busy()) if (b.start < end && b.end >= end) end = b.start;
+    const prev = Math.max(-Infinity, ...busy().filter((b) => b.end <= end).map((b) => b.end));
+    const start = Math.max(end - 30 * MIN, prev);
+    if (end - start < MIN) return toast('No free time just before now');
+    openNew(start, end);
   }
 
   function onGridClick(e: React.MouseEvent) {
@@ -312,8 +367,8 @@ export default function DayPage() {
           <IonFabButton
             aria-label="Add interval"
             onClick={() => {
-              const end = isToday ? Math.floor(Date.now() / (5 * MIN)) * 5 * MIN : atLocalTime(dayStart, 12);
-              newIntervalAt(end - 30 * MIN);
+              if (isToday) newIntervalEndingAt(Math.floor(Date.now() / (5 * MIN)) * 5 * MIN);
+              else newIntervalAt(atLocalTime(dayStart, 12));
             }}
           >
             <IonIcon icon={add} />

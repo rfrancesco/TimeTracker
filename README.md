@@ -13,3 +13,10 @@ Stored in IndexedDB (Dexie), see `src/db.ts`. All timestamps are UTC ISO strings
 every record has a UUID + `updatedAt`, ready to sync to a REST backend later.
 The running timer is stored as a start timestamp, so it survives app close and reboot.
 Settings → Export/Restore backup for JSON backups.
+
+## Data invariant
+Time records never overlap, never extend into the future, and a running timer always
+starts after the last saved interval. All writes that change times go through
+`src/constraints.ts`, which enforces this (the day view clamps drags to free space,
+the editor asks before replacing overlapping time). Old databases and imported
+backups are normalised on load (later-edited records win).

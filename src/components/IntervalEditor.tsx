@@ -6,7 +6,8 @@ import {
 import { close, trashOutline } from 'ionicons/icons';
 import AreaPill from './AreaPill';
 import SubAreaChips from './SubAreaChips';
-import { db, nowIso, uuid } from '../db';
+import { db } from '../db';
+import { ConstraintError, OverlapError, describeConflicts, saveInterval, updateActive } from '../constraints';
 import { useAreas, useSubAreas } from '../hooks';
 import { formatDuration } from '../timer';
 
@@ -44,23 +45,52 @@ export default function IntervalEditor({ value, onClose }: Props) {
   }, [value]);
 
   const isActive = v?.kind === 'active';
-  const valid = !!v && !Number.isNaN(v.start) && (isActive ? v.start <= Date.now() : !Number.isNaN(v.end) && v.end > v.start);
+  const now = Date.now();
+  const problem = !v
+    ? 'missing'
+    : Number.isNaN(v.start) || (!isActive && Number.isNaN(v.end))
+      ? 'Enter a valid time'
+      : isActive
+        ? v.start > now
+          ? 'Start must be in the past'
+          : null
+        : v.end <= v.start
+          ? 'End must be after start'
+          : v.end > now
+            ? 'Can’t record time in the future'
+            : null;
+  const valid = problem === null;
   const area = areas.find((a) => a.id === v?.areaId);
   const subs = subAreas.filter((s) => s.areaId === v?.areaId && !s.archived);
 
-  async function save() {
+  async function save(overwrite = false) {
     if (!v || !valid) return;
-    const t = nowIso();
-    const start = new Date(v.start).toISOString();
-    const end = new Date(v.end).toISOString();
-    if (v.kind === 'new') {
-      await db.intervals.add({ id: uuid(), areaId: v.areaId, subAreaId: v.subAreaId, start, end, note: v.note, updatedAt: t });
-    } else if (v.kind === 'existing' && v.id) {
-      await db.intervals.update(v.id, { areaId: v.areaId, subAreaId: v.subAreaId, start, end, note: v.note, updatedAt: t });
-    } else if (v.kind === 'active') {
-      await db.active.put({ key: 'current', areaId: v.areaId, subAreaId: v.subAreaId, start });
+    try {
+      if (v.kind === 'active') {
+        await updateActive({ start: v.start, areaId: v.areaId, subAreaId: v.subAreaId }, { overwrite });
+      } else {
+        await saveInterval(
+          { id: v.kind === 'existing' ? v.id : undefined, areaId: v.areaId, subAreaId: v.subAreaId, start: v.start, end: v.end, note: v.note },
+          { overwrite },
+        );
+      }
+      onClose();
+    } catch (err) {
+      if (err instanceof OverlapError) {
+        const nameOf = (id: string) => areas.find((a) => a.id === id)?.name ?? 'Deleted area';
+        presentAlert({
+          header: 'Overlaps existing time',
+          message: describeConflicts(err, nameOf).join('\n'),
+          cssClass: 'pre-line-alert',
+          buttons: [
+            { text: 'Cancel', role: 'cancel' },
+            { text: 'Replace that time', role: 'destructive', handler: () => void save(true) },
+          ],
+        });
+      } else if (err instanceof ConstraintError) {
+        presentAlert({ header: 'Can’t save', message: err.message, buttons: ['OK'] });
+      } else throw err;
     }
-    onClose();
   }
 
   function remove() {
@@ -96,7 +126,7 @@ export default function IntervalEditor({ value, onClose }: Props) {
           </IonButtons>
           <IonTitle>{title}</IonTitle>
           <IonButtons slot="end">
-            <IonButton strong disabled={!valid} onClick={save}>Save</IonButton>
+            <IonButton strong disabled={!valid} onClick={() => save()}>Save</IonButton>
           </IonButtons>
         </IonToolbar>
       </IonHeader>
@@ -142,11 +172,7 @@ export default function IntervalEditor({ value, onClose }: Props) {
               <IonItem lines="none">
                 <IonText color={valid ? 'medium' : 'danger'}>
                   <p className="duration-hint">
-                    {valid
-                      ? `Duration: ${formatDuration((isActive ? Date.now() : v.end) - v.start, false)}`
-                      : isActive
-                        ? 'Start must be in the past'
-                        : 'End must be after start'}
+                    {valid ? `Duration: ${formatDuration((isActive ? now : v.end) - v.start, false)}` : problem}
                   </p>
                 </IonText>
               </IonItem>

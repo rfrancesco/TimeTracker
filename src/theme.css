@@ -478,3 +478,5 @@ ion-item.row-break { --border-width: 0 0 3px 0; }
 .day-detail-item { display: inline-flex; align-items: center; gap: 6px; }
 .day-detail-item .swatch { width: 10px; height: 10px; border-radius: 3px; }
 .day-detail ion-button { margin: 6px 0 0 -8px; }
+
+.pre-line-alert .alert-message { white-space: pre-line; }

@@ -1,21 +1,10 @@
-import { db, nowIso, uuid, type ActiveTimer } from './db';
+import { db } from './db';
+import { commitTimerSpan } from './constraints';
 
 /** Below this, switching relabels the running timer instead of splitting it, and stopping discards it. */
 export const RELABEL_THRESHOLD_MS = 60_000;
 
 const getActive = () => db.active.get('current');
-
-async function saveInterval(a: ActiveTimer, end: string) {
-  if (new Date(end).getTime() <= new Date(a.start).getTime()) return;
-  await db.intervals.add({
-    id: uuid(),
-    areaId: a.areaId,
-    subAreaId: a.subAreaId,
-    start: a.start,
-    end,
-    updatedAt: nowIso(),
-  });
-}
 
 /**
  * Start tracking `areaId`/`subAreaId`.
@@ -39,7 +28,7 @@ export async function track(areaId: string, subAreaId: string | null) {
       await db.active.put({ ...a, areaId, subAreaId });
       return;
     }
-    await saveInterval(a, now);
+    await commitTimerSpan(a, nowMs);
     await db.active.put({ key: 'current', areaId, subAreaId, start: now });
   });
 }
@@ -51,7 +40,7 @@ export async function stop() {
     const a = await getActive();
     if (!a) return;
     if (nowMs - new Date(a.start).getTime() >= RELABEL_THRESHOLD_MS) {
-      await saveInterval(a, new Date(nowMs).toISOString());
+      await commitTimerSpan(a, nowMs);
     }
     await db.active.delete('current');
   });

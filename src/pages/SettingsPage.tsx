@@ -7,15 +7,15 @@ import {
 } from '@ionic/react';
 import { add, cloudDownloadOutline, cloudUploadOutline, refreshOutline, trashOutline } from 'ionicons/icons';
 import AreaEditor from '../components/AreaEditor';
-import { db, deleteTrackedTime, exportAll, importAll, nowIso, resetEverything, type Area } from '../db';
-import { useAreas, useSubAreas } from '../hooks';
+import { db, deleteTrackedTime, exportAll, importAll, nowIso, resetEverything } from '../db';
+import { useAreas, useSubAreas, type AreaView } from '../hooks';
 import { iconFor } from '../icons';
 import { localDateKey } from '../time';
 
 export default function SettingsPage() {
   const areas = useAreas();
   const subAreas = useSubAreas();
-  const [editing, setEditing] = useState<Area | 'new' | null>(null);
+  const [editing, setEditing] = useState<AreaView | 'new' | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const [presentAlert] = useIonAlert();
   const [presentToast] = useIonToast();
@@ -24,7 +24,7 @@ export default function SettingsPage() {
   const persisted = useLiveQuery(async () => (navigator.storage?.persisted ? navigator.storage.persisted() : false));
 
   async function onReorder(e: CustomEvent<ReorderEndEventDetail>) {
-    const next = e.detail.complete(areas) as Area[];
+    const next = e.detail.complete(areas) as AreaView[];
     const t = nowIso();
     await db.transaction('rw', db.areas, async () => {
       for (const [i, a] of next.entries()) await db.areas.update(a.id, { order: i, updatedAt: t });
@@ -117,8 +117,11 @@ export default function SettingsPage() {
             text: 'Replace',
             role: 'destructive',
             handler: async () => {
-              await importAll(data);
-              presentToast({ message: 'Backup restored', duration: 2000 });
+              const fixed = await importAll(data);
+              presentToast({
+                message: fixed ? `Backup restored · ${fixed} overlapping records fixed` : 'Backup restored',
+                duration: 2500,
+              });
             },
           },
         ],

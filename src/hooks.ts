@@ -1,13 +1,34 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, type Area, type SubArea } from './db';
+import { displayColor, prefersDark } from './color';
 
-export function useAreas(includeArchived = false): Area[] {
-  return (
+/** Follows the system light/dark setting. */
+export function useDarkMode() {
+  const [dark, setDark] = useState(prefersDark);
+  useEffect(() => {
+    const mq = window.matchMedia?.('(prefers-color-scheme: dark)');
+    if (!mq) return;
+    const on = () => setDark(mq.matches);
+    mq.addEventListener('change', on);
+    return () => mq.removeEventListener('change', on);
+  }, []);
+  return dark;
+}
+
+/** An area as shown on screen: `color` is adjusted for the theme, `baseColor` is what is stored. */
+export type AreaView = Area & { baseColor: string };
+
+export function useAreas(includeArchived = false): AreaView[] {
+  const dark = useDarkMode();
+  const areas =
     useLiveQuery(
       async () => (await db.areas.orderBy('order').toArray()).filter((a) => includeArchived || !a.archived),
       [includeArchived],
-    ) ?? []
+    ) ?? [];
+  return useMemo(
+    () => areas.map((a) => ({ ...a, baseColor: a.color, color: displayColor(a.color, dark) })),
+    [areas, dark],
   );
 }
 
