@@ -5,7 +5,8 @@ import { requestPersistentStorage } from './db';
 
 // autoUpdate: a new service worker activates and the page reloads on its own.
 // Besides the check on launch, look for updates whenever the app returns to the
-// foreground (Android keeps PWAs alive in the background) and hourly.
+// foreground (Android keeps PWAs alive in the background). The running timer is
+// stored as a start timestamp in IndexedDB, so a reload never affects it.
 registerSW({
   immediate: true,
   onRegisteredSW(_url, registration) {
@@ -16,7 +17,6 @@ registerSW({
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible') check();
     });
-    setInterval(check, 60 * 60 * 1000);
   },
 });
 requestPersistentStorage();
