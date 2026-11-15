@@ -1,0 +1,153 @@
+import { useEffect, useMemo } from 'react';
+import { useLiveQuery } from 'dexie-react-hooks';
+import {
+  IonButton, IonContent, IonHeader, IonIcon, IonPage, IonTitle, IonToolbar, useIonViewDidEnter,
+} from '@ionic/react';
+import { stop as stopIcon } from 'ionicons/icons';
+import AreaPill from '../components/AreaPill';
+import SubAreaChips from '../components/SubAreaChips';
+import { db } from '../db';
+import { setThemeColor, useActive, useAreas, useNow, useSubAreas } from '../hooks';
+import { formatDuration, stop, track } from '../timer';
+import { BACKGROUND_TINT, prefersDark, tintOverBackground } from '../color';
+import { iconFor } from '../icons';
+
+const haptic = () => navigator.vibrate?.(12);
+
+function startOfToday() {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+export default function TimerPage() {
+  const areas = useAreas();
+  const allAreas = useAreas(true);
+  const subAreas = useSubAreas();
+  const active = useActive();
+  const now = useNow(1000, !!active);
+
+  const activeArea = allAreas.find((a) => a.id === active?.areaId);
+  const activeSub = subAreas.find((s) => s.id === active?.subAreaId);
+  const subsOfActive = subAreas.filter((s) => s.areaId === active?.areaId && !s.archived);
+  const elapsed = active ? now - new Date(active.start).getTime() : 0;
+
+  // Status bar follows the page tint.
+  const statusColor = activeArea ? tintOverBackground(activeArea.color, BACKGROUND_TINT) : prefersDark() ? '#121212' : '#ffffff';
+  useEffect(() => setThemeColor(statusColor), [statusColor]);
+  useIonViewDidEnter(() => setThemeColor(statusColor), [statusColor]);
+
+  // Today's totals (finished intervals + running one).
+  const dayStart = startOfToday().toISOString();
+  const todays = useLiveQuery(() => db.intervals.where('end').above(dayStart).toArray(), [dayStart]) ?? [];
+  const totals = useMemo(() => {
+    const m = new Map<string, number>();
+    const ds = new Date(dayStart).getTime();
+    for (const i of todays) {
+      const ms = new Date(i.end).getTime() - Math.max(ds, new Date(i.start).getTime());
+      m.set(i.areaId, (m.get(i.areaId) ?? 0) + ms);
+    }
+    if (active) {
+      const ms = now - Math.max(ds, new Date(active.start).getTime());
+      m.set(active.areaId, (m.get(active.areaId) ?? 0) + ms);
+    }
+    return [...m.entries()].sort((a, b) => b[1] - a[1]);
+  }, [todays, active, now, dayStart]);
+
+  return (
+    <IonPage
+      className={`timer-page${activeArea ? ' tracking' : ''}`}
+      style={activeArea ? { ['--area-color' as string]: activeArea.color } : undefined}
+    >
+      <IonHeader className="ion-no-border">
+        <IonToolbar>
+          <IonTitle>Timer</IonTitle>
+        </IonToolbar>
+      </IonHeader>
+      <IonContent>
+        <div className="timer-layout">
+          <section className="timer-display" aria-live="polite">
+            {active && activeArea ? (
+              <>
+                <div className="timer-label">
+                  <IonIcon icon={iconFor(activeArea.icon)} />
+                  <span>
+                    {activeArea.name}
+                    {activeSub ? ` · ${activeSub.name}` : ''}
+                  </span>
+                </div>
+                <div className="timer-digits">{formatDuration(elapsed)}</div>
+                <div className="timer-since">
+                  since {new Date(active.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="timer-digits idle">0:00:00</div>
+                <div className="timer-since">Tap an area to start tracking</div>
+              </>
+            )}
+          </section>
+
+          <AreaPill
+            areas={areas}
+            selectedId={active?.areaId}
+            onSelect={(a) => {
+              haptic();
+              // Re-tapping the running area keeps its sub-area.
+              if (a.id === active?.areaId) return;
+              track(a.id, null);
+            }}
+          />
+
+          {activeArea && (
+            <SubAreaChips
+              subAreas={subsOfActive}
+              selectedId={active?.subAreaId ?? null}
+              color={activeArea.color}
+              allowNone
+              onSelect={(id) => {
+                haptic();
+                track(activeArea.id, id);
+              }}
+            />
+          )}
+
+          <IonButton
+            className="stop-button"
+            shape="round"
+            size="large"
+            color="danger"
+            disabled={!active}
+            onClick={() => {
+              haptic();
+              stop();
+            }}
+          >
+            <IonIcon slot="start" icon={stopIcon} />
+            Stop
+          </IonButton>
+
+          {totals.length > 0 && (
+            <section className="today-totals">
+              <h2>Today</h2>
+              {totals.map(([areaId, ms]) => {
+                const a = allAreas.find((x) => x.id === areaId);
+                if (!a) return null;
+                return (
+                  <div key={areaId} className="today-row">
+                    <span className="dot" style={{ background: a.color }}>
+                      <IonIcon icon={iconFor(a.icon)} />
+                    </span>
+                    <span className="name">{a.name}</span>
+                    <span className="dur">{formatDuration(ms, false)}</span>
+                  </div>
+                );
+              })}
+            </section>
+          )}
+        </div>
+      </IonContent>
+    </IonPage>
+  );
+}

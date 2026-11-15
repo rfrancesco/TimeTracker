@@ -1,0 +1,152 @@
+import { useRef, useState } from 'react';
+import { useLiveQuery } from 'dexie-react-hooks';
+import {
+  IonButton, IonButtons, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonList, IonListHeader, IonNote,
+  IonPage, IonReorder, IonReorderGroup, IonTitle, IonToolbar, useIonAlert, useIonToast,
+  type ReorderEndEventDetail,
+} from '@ionic/react';
+import { add, cloudDownloadOutline, cloudUploadOutline } from 'ionicons/icons';
+import AreaEditor from '../components/AreaEditor';
+import { db, exportAll, importAll, nowIso, type Area } from '../db';
+import { useAreas, useSubAreas } from '../hooks';
+import { iconFor } from '../icons';
+
+export default function SettingsPage() {
+  const areas = useAreas();
+  const subAreas = useSubAreas();
+  const [editing, setEditing] = useState<Area | 'new' | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [presentAlert] = useIonAlert();
+  const [presentToast] = useIonToast();
+  const intervalCount = useLiveQuery(() => db.intervals.count()) ?? 0;
+  const persisted = useLiveQuery(async () => (navigator.storage?.persisted ? navigator.storage.persisted() : false));
+
+  async function onReorder(e: CustomEvent<ReorderEndEventDetail>) {
+    const next = e.detail.complete(areas) as Area[];
+    const t = nowIso();
+    await db.transaction('rw', db.areas, async () => {
+      for (const [i, a] of next.entries()) await db.areas.update(a.id, { order: i, updatedAt: t });
+    });
+  }
+
+  async function doExport() {
+    const data = await exportAll();
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const name = `timetracker-${new Date().toISOString().slice(0, 10)}.json`;
+    const file = new File([blob], name, { type: 'application/json' });
+    // Android share sheet if available (save to Drive, etc.), otherwise download.
+    if (navigator.canShare?.({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: name });
+        return;
+      } catch {
+        /* cancelled — fall through to download */
+      }
+    }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
+  async function onImportFile(file: File) {
+    try {
+      const data = JSON.parse(await file.text());
+      if (!Array.isArray(data.areas) || !Array.isArray(data.intervals)) throw new Error('Not a backup file');
+      presentAlert({
+        header: 'Replace all data?',
+        message: `This will replace your current data with ${data.intervals.length} intervals from the backup.`,
+        buttons: [
+          { text: 'Cancel', role: 'cancel' },
+          {
+            text: 'Replace',
+            role: 'destructive',
+            handler: async () => {
+              await importAll(data);
+              presentToast({ message: 'Backup restored', duration: 2000 });
+            },
+          },
+        ],
+      });
+    } catch (err) {
+      presentToast({ message: `Import failed: ${(err as Error).message}`, duration: 3000, color: 'danger' });
+    }
+  }
+
+  return (
+    <IonPage>
+      <IonHeader>
+        <IonToolbar>
+          <IonTitle>Settings</IonTitle>
+          <IonButtons slot="end">
+            <IonButton onClick={() => setEditing('new')} aria-label="Add area">
+              <IonIcon slot="icon-only" icon={add} />
+            </IonButton>
+          </IonButtons>
+        </IonToolbar>
+      </IonHeader>
+      <IonContent>
+        <IonList>
+          <IonListHeader>
+            <IonLabel>Areas</IonLabel>
+          </IonListHeader>
+          <IonReorderGroup disabled={false} onIonReorderEnd={onReorder}>
+            {areas.map((a) => {
+              const subs = subAreas.filter((s) => s.areaId === a.id && !s.archived);
+              return (
+                <IonItem key={a.id} button detail={false} onClick={() => setEditing(a)}>
+                  <span slot="start" className="area-avatar" style={{ background: a.color }}>
+                    <IonIcon icon={iconFor(a.icon)} />
+                  </span>
+                  <IonLabel>
+                    <h3>{a.name}</h3>
+                    {subs.length > 0 && <p>{subs.map((s) => s.name).join(', ')}</p>}
+                  </IonLabel>
+                  <IonReorder slot="end" />
+                </IonItem>
+              );
+            })}
+          </IonReorderGroup>
+          <IonItem button detail={false} onClick={() => setEditing('new')}>
+            <IonIcon slot="start" icon={add} />
+            <IonLabel>Add area</IonLabel>
+          </IonItem>
+        </IonList>
+
+        <IonList>
+          <IonListHeader>
+            <IonLabel>Data</IonLabel>
+          </IonListHeader>
+          <IonItem>
+            <IonLabel>
+              <h3>Stored on this device</h3>
+              <p>{intervalCount} intervals · {persisted ? 'protected from cleanup' : 'may be cleared by the browser'}</p>
+            </IonLabel>
+          </IonItem>
+          <IonItem button detail={false} onClick={doExport}>
+            <IonIcon slot="start" icon={cloudUploadOutline} />
+            <IonLabel>Export backup</IonLabel>
+          </IonItem>
+          <IonItem button detail={false} onClick={() => fileRef.current?.click()}>
+            <IonIcon slot="start" icon={cloudDownloadOutline} />
+            <IonLabel>Restore backup</IonLabel>
+          </IonItem>
+        </IonList>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="application/json,.json"
+          hidden
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) onImportFile(f);
+            e.target.value = '';
+          }}
+        />
+        <IonNote className="ion-padding version-note">Time Tracker v0.1 · local-first</IonNote>
+      </IonContent>
+      <AreaEditor area={editing} onClose={() => setEditing(null)} />
+    </IonPage>
+  );
+}
