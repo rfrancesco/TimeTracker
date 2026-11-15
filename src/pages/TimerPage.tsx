@@ -7,7 +7,8 @@ import { stop as stopIcon } from 'ionicons/icons';
 import AreaPill from '../components/AreaPill';
 import SubAreaChips from '../components/SubAreaChips';
 import { db } from '../db';
-import { useActive, useAreas, useNow, useSubAreas } from '../hooks';
+import { useActive, useAreas, useDarkMode, useNow, useSubAreas } from '../hooks';
+import { BACKGROUND_TINT, themeBackground, tintOverBackground } from '../color';
 import { formatDuration, stop, track } from '../timer';
 import { iconFor } from '../icons';
 import { startOfLocalDay } from '../time';
@@ -24,6 +25,8 @@ export default function TimerPage() {
   const now = useNow(active ? 1000 : 60_000);
 
   const activeArea = allAreas.find((a) => a.id === active?.areaId);
+  const dark = useDarkMode();
+  const pageBackground = activeArea ? tintOverBackground(activeArea.color, BACKGROUND_TINT, dark) : themeBackground(dark);
   const activeSub = subAreas.find((s) => s.id === active?.subAreaId);
   const subsOfActive = subAreas.filter((s) => s.areaId === active?.areaId && !s.archived);
   const elapsed = active ? now - new Date(active.start).getTime() : 0;
@@ -78,6 +81,7 @@ export default function TimerPage() {
 
           <AreaPill
             areas={areas}
+            background={pageBackground}
             selectedId={active?.areaId}
             onSelect={(a) => {
               haptic();
@@ -123,7 +127,7 @@ export default function TimerPage() {
                 if (!a) return null;
                 return (
                   <div key={areaId} className="today-row">
-                    <span className="dot" style={{ background: a.color }}>
+                    <span className="dot" style={{ background: a.color, color: a.onColor }}>
                       <IonIcon icon={iconFor(a.icon)} />
                     </span>
                     <span className="name">{a.name}</span>

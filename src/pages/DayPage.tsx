@@ -412,6 +412,7 @@ export default function DayPage() {
               const sub = subAreas.find((x) => x.id === b.subAreaId);
               const selected = selectedId === b.id;
               const color = area?.color ?? '#888';
+              const ink = area?.onColor ?? '#fff';
               const label = `${area?.name ?? 'Unknown'}${sub ? ` · ${sub.name}` : ''}`;
               const onClick = (e: React.MouseEvent) => {
                 e.stopPropagation();
@@ -426,11 +427,11 @@ export default function DayPage() {
                   <div key={b.id} className="tiny-wrap">
                     <div
                       className={`tiny-marker${selected ? ' selected' : ''}`}
-                      style={{ top, height: Math.max(2, height), ['--area-color' as string]: color }}
+                      style={{ top, height: Math.max(2, height), ['--area-color' as string]: color, ['--on-area' as string]: ink }}
                     />
                     <div
                       className={`day-chip${selected ? ' selected' : ''}${b.active ? ' active' : ''}`}
-                      style={{ top: chipTop, height: CHIP_H, ['--area-color' as string]: color }}
+                      style={{ top: chipTop, height: CHIP_H, ['--area-color' as string]: color, ['--on-area' as string]: ink }}
                       onClick={onClick}
                       onPointerDown={(e) => beginDrag(e, b, 'move')}
                       title={`${label} ${hhmm(b.start)}–${b.active ? 'now' : hhmm(b.end)}${b.note ? `\n${b.note}` : ''}`}
@@ -452,7 +453,7 @@ export default function DayPage() {
                     height: height - 2,
                     left: `calc(${(b.lane / b.lanes) * 100}% + 2px)`,
                     width: `calc(${100 / b.lanes}% - 4px)`,
-                    ['--area-color' as string]: color,
+                    ['--area-color' as string]: color, ['--on-area' as string]: ink,
                   }}
                   onClick={onClick}
                   onPointerDown={(e) => beginDrag(e, b, 'move')}

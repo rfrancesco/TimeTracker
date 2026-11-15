@@ -6,7 +6,7 @@ import {
 import { add, close, closeCircle, trashOutline } from 'ionicons/icons';
 import { db, nowIso, uuid, type SubArea } from '../db';
 import { useDarkMode, type AreaView } from '../hooks';
-import { displayColor } from '../color';
+import { displayColor, onColor } from '../color';
 import { ICONS, PALETTE } from '../icons';
 
 interface Props {
@@ -130,7 +130,7 @@ export default function AreaEditor({ area, onClose }: Props) {
         </IonToolbar>
       </IonHeader>
       <IonContent>
-        <div className="area-preview" style={{ ['--area-color' as string]: shown }}>
+        <div className="area-preview" style={{ ['--area-color' as string]: shown, ['--on-area' as string]: onColor(shown) }}>
           <span className="area-preview-icon"><IonIcon icon={ICONS[icon]} /></span>
         </div>
         <IonList>
@@ -165,7 +165,7 @@ export default function AreaEditor({ area, onClose }: Props) {
         </div>
 
         <IonListHeader>Icon</IonListHeader>
-        <div className="icon-grid" style={{ ['--area-color' as string]: shown }}>
+        <div className="icon-grid" style={{ ['--area-color' as string]: shown, ['--on-area' as string]: onColor(shown) }}>
           {Object.entries(ICONS).map(([key, ic]) => (
             <button
               key={key}

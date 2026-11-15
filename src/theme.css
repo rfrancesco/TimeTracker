@@ -85,7 +85,7 @@
   border-radius: 50%;
   border: 0;
   background: transparent;
-  color: var(--area-color);
+  color: var(--icon-color, var(--area-color));
   display: grid;
   place-items: center;
   font-size: 24px;
@@ -94,7 +94,6 @@
 }
 .area-pill-btn.selected {
   background: var(--area-color);
-  color: #fff;
 }
 
 /* Sub-area chips */
@@ -112,7 +111,7 @@
 }
 .sub-chips ion-chip.selected {
   --background: var(--area-color);
-  --color: #fff;
+  --color: var(--on-area, #fff);
 }
 
 .stop-button {
@@ -236,7 +235,7 @@
   z-index: 5;
   touch-action: none;
   background: var(--area-color);
-  color: #fff;
+  color: var(--on-area, #fff);
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
 }
 .day-block-title {
@@ -269,7 +268,7 @@
   height: 4px;
   margin-left: -14px;
   border-radius: 2px;
-  background: #fff;
+  background: var(--on-area, #fff);
 }
 .handle.top::after { top: 9px; }
 .handle.bottom::after { bottom: 9px; }
@@ -305,7 +304,7 @@ ion-item.row-break { --border-width: 0 0 3px 0; }
   height: 72px;
   border-radius: 50%;
   background: var(--area-color);
-  color: #fff;
+  color: var(--on-area, #fff);
   display: grid;
   place-items: center;
   font-size: 36px;
@@ -334,7 +333,7 @@ ion-item.row-break { --border-width: 0 0 3px 0; }
   place-items: center;
   cursor: pointer;
 }
-.icon-choice.selected { background: var(--area-color); color: #fff; }
+.icon-choice.selected { background: var(--area-color); color: var(--on-area, #fff); }
 .version-note { display: block; text-align: center; }
 
 /* ---------- Reports ---------- */
@@ -507,7 +506,7 @@ ion-item.row-break { --border-width: 0 0 3px 0; }
   padding: 0 8px;
   border-radius: 13px;
   background: var(--area-color);
-  color: #fff;
+  color: var(--on-area, #fff);
   font-size: 0.75rem;
   font-weight: 600;
   white-space: nowrap;

@@ -1,23 +1,19 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, type Area, type SubArea } from './db';
-import { displayColor, prefersDark } from './color';
+import { displayColor, onColor } from './color';
+import { isDark, subscribeTheme } from './theme';
 
-/** Follows the system light/dark setting. */
+/** The effective theme (the user's choice, or the system's when set to follow it). */
 export function useDarkMode() {
-  const [dark, setDark] = useState(prefersDark);
-  useEffect(() => {
-    const mq = window.matchMedia?.('(prefers-color-scheme: dark)');
-    if (!mq) return;
-    const on = () => setDark(mq.matches);
-    mq.addEventListener('change', on);
-    return () => mq.removeEventListener('change', on);
-  }, []);
-  return dark;
+  return useSyncExternalStore(subscribeTheme, isDark);
 }
 
-/** An area as shown on screen: `color` is adjusted for the theme, `baseColor` is what is stored. */
-export type AreaView = Area & { baseColor: string };
+/**
+ * An area as shown on screen: `color` is adjusted for the theme, `baseColor` is
+ * what is stored, `onColor` is the readable ink for icons/text drawn on `color`.
+ */
+export type AreaView = Area & { baseColor: string; onColor: string };
 
 export function useAreas(includeArchived = false): AreaView[] {
   const dark = useDarkMode();
@@ -27,7 +23,11 @@ export function useAreas(includeArchived = false): AreaView[] {
       [includeArchived],
     ) ?? [];
   return useMemo(
-    () => areas.map((a) => ({ ...a, baseColor: a.color, color: displayColor(a.color, dark) })),
+    () =>
+      areas.map((a) => {
+        const color = displayColor(a.color, dark);
+        return { ...a, baseColor: a.color, color, onColor: onColor(color) };
+      }),
     [areas, dark],
   );
 }

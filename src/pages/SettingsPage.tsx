@@ -2,15 +2,17 @@ import { useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
   IonButton, IonButtons, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonList, IonListHeader, IonNote,
-  IonPage, IonReorder, IonReorderGroup, IonTitle, IonToolbar, useIonActionSheet, useIonAlert, useIonToast,
+  IonPage, IonReorder, IonReorderGroup, IonSelect, IonSelectOption, IonTitle, IonToolbar, useIonActionSheet, useIonAlert,
+  useIonToast,
   type ReorderEndEventDetail,
 } from '@ionic/react';
-import { add, cloudDownloadOutline, cloudUploadOutline, refreshOutline, trashOutline } from 'ionicons/icons';
+import { add, cloudDownloadOutline, cloudUploadOutline, contrastOutline, refreshOutline, trashOutline } from 'ionicons/icons';
 import AreaEditor from '../components/AreaEditor';
 import { db, deleteTrackedTime, exportAll, importAll, nowIso, resetEverything } from '../db';
 import { useAreas, useSubAreas, type AreaView } from '../hooks';
 import { iconFor } from '../icons';
 import { localDateKey } from '../time';
+import { getThemePref, setThemePref, type ThemePref } from '../theme';
 
 export default function SettingsPage() {
   const areas = useAreas();
@@ -20,6 +22,7 @@ export default function SettingsPage() {
   const [presentAlert] = useIonAlert();
   const [presentToast] = useIonToast();
   const [presentActionSheet] = useIonActionSheet();
+  const [themePref, setThemePrefState] = useState<ThemePref>(getThemePref);
   const intervalCount = useLiveQuery(() => db.intervals.count()) ?? 0;
   const persisted = useLiveQuery(async () => (navigator.storage?.persisted ? navigator.storage.persisted() : false));
 
@@ -159,7 +162,7 @@ export default function SettingsPage() {
                   className={a.breakAfter ? 'row-break' : undefined}
                   onClick={() => setEditing(a)}
                 >
-                  <span slot="start" className="area-avatar" style={{ background: a.color }}>
+                  <span slot="start" className="area-avatar" style={{ background: a.color, color: a.onColor }}>
                     <IonIcon icon={iconFor(a.icon)} />
                   </span>
                   <IonLabel>
@@ -177,6 +180,30 @@ export default function SettingsPage() {
           <IonItem button detail={false} onClick={() => setEditing('new')}>
             <IonIcon slot="start" icon={add} />
             <IonLabel>Add area</IonLabel>
+          </IonItem>
+        </IonList>
+
+        <IonList>
+          <IonListHeader>
+            <IonLabel>Appearance</IonLabel>
+          </IonListHeader>
+          <IonItem>
+            <IonIcon slot="start" icon={contrastOutline} />
+            <IonSelect
+              label="Theme"
+              interface="alert"
+              interfaceOptions={{ header: 'Theme' }}
+              value={themePref}
+              onIonChange={(e) => {
+                const next = e.detail.value as ThemePref;
+                setThemePref(next);
+                setThemePrefState(next);
+              }}
+            >
+              <IonSelectOption value="system">System default</IonSelectOption>
+              <IonSelectOption value="light">Light</IonSelectOption>
+              <IonSelectOption value="dark">Dark</IonSelectOption>
+            </IonSelect>
           </IonItem>
         </IonList>
 

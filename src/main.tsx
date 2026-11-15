@@ -1,5 +1,6 @@
 import { createRoot } from 'react-dom/client';
 import { registerSW } from 'virtual:pwa-register';
+import './theme'; // applies the saved light/dark choice before the first render
 import App from './App';
 import { requestPersistentStorage } from './db';
 

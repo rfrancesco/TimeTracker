@@ -75,7 +75,7 @@ export default function ReportPage() {
 
   const areaInfo = (id: string) => {
     const a = areas.find((x) => x.id === id);
-    return { name: a?.name ?? 'Deleted area', color: a?.color ?? '#8a8a8a', icon: a?.icon ?? 'sparkles' };
+    return { name: a?.name ?? 'Deleted area', color: a?.color ?? '#8a8a8a', ink: a?.onColor ?? '#fff', icon: a?.icon ?? 'sparkles' };
   };
 
   // Ranked areas, and chart slices with the tail folded into "Other".
@@ -210,7 +210,7 @@ export default function ReportPage() {
                         if (hasSubs) setExpanded(open ? null : id);
                       }}
                     >
-                      <span className="dot" style={{ background: info.color }}>
+                      <span className="dot" style={{ background: info.color, color: info.ink }}>
                         <IonIcon icon={iconFor(info.icon)} />
                       </span>
                       <span className="row-main">

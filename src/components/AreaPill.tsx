@@ -1,16 +1,19 @@
 import { IonIcon, IonRippleEffect } from '@ionic/react';
-import type { Area } from '../db';
 import { iconFor } from '../icons';
+import { useDarkMode, type AreaView } from '../hooks';
+import { readableOn, surfaceOver, themeBackground } from '../color';
 
 interface Props {
-  areas: Area[];
+  areas: AreaView[];
   selectedId?: string | null;
-  onSelect: (area: Area) => void;
+  onSelect: (area: AreaView) => void;
+  /** The colour behind the selector (e.g. the tinted Timer page); defaults to the theme background. */
+  background?: string;
 }
 
 /** Split areas into rows at each area marked `breakAfter`. */
-function toRows(areas: Area[]) {
-  const rows: Area[][] = [[]];
+function toRows(areas: AreaView[]) {
+  const rows: AreaView[][] = [[]];
   areas.forEach((a, i) => {
     rows[rows.length - 1].push(a);
     if (a.breakAfter && i < areas.length - 1) rows.push([]);
@@ -18,8 +21,14 @@ function toRows(areas: Area[]) {
   return rows;
 }
 
-/** Icon-only pill-shaped area selector; one pill per row. */
-export default function AreaPill({ areas, selectedId, onSelect }: Props) {
+/**
+ * Icon-only area selector; one pill per row. Each icon keeps its area colour
+ * when that reads on the surface behind it, and is adjusted for contrast when
+ * it doesn't (e.g. a dark icon on a page tinted by another dark area).
+ */
+export default function AreaPill({ areas, selectedId, onSelect, background }: Props) {
+  const dark = useDarkMode();
+  const surface = surfaceOver(background ?? themeBackground(dark));
   return (
     <div className="area-pills" role="radiogroup">
       {toRows(areas).map((row, r) => (
@@ -35,7 +44,10 @@ export default function AreaPill({ areas, selectedId, onSelect }: Props) {
                 aria-label={a.name}
                 title={a.name}
                 className={`area-pill-btn ion-activatable${selected ? ' selected' : ''}`}
-                style={{ ['--area-color' as string]: a.color }}
+                style={{
+                  ['--area-color' as string]: a.color,
+                  ['--icon-color' as string]: selected ? a.onColor : readableOn(a.color, surface),
+                }}
                 onClick={() => onSelect(a)}
               >
                 <IonIcon icon={iconFor(a.icon)} />

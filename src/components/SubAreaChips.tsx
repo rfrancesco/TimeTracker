@@ -1,5 +1,6 @@
 import { IonChip, IonLabel } from '@ionic/react';
 import type { SubArea } from '../db';
+import { onColor } from '../color';
 
 interface Props {
   subAreas: SubArea[];
@@ -12,7 +13,7 @@ interface Props {
 export default function SubAreaChips({ subAreas, selectedId, color, onSelect, allowNone }: Props) {
   if (!subAreas.length) return null;
   return (
-    <div className="sub-chips" style={{ ['--area-color' as string]: color }}>
+    <div className="sub-chips" style={{ ['--area-color' as string]: color, ['--on-area' as string]: onColor(color) }}>
       {allowNone && (
         <IonChip className={selectedId === null ? 'selected' : ''} onClick={() => onSelect(null)}>
           <IonLabel>None</IonLabel>
