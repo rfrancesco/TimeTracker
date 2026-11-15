@@ -2,12 +2,12 @@ import { useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
   IonButton, IonButtons, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonList, IonListHeader, IonNote,
-  IonPage, IonReorder, IonReorderGroup, IonTitle, IonToolbar, useIonAlert, useIonToast,
+  IonPage, IonReorder, IonReorderGroup, IonTitle, IonToolbar, useIonActionSheet, useIonAlert, useIonToast,
   type ReorderEndEventDetail,
 } from '@ionic/react';
-import { add, cloudDownloadOutline, cloudUploadOutline } from 'ionicons/icons';
+import { add, cloudDownloadOutline, cloudUploadOutline, refreshOutline, trashOutline } from 'ionicons/icons';
 import AreaEditor from '../components/AreaEditor';
-import { db, exportAll, importAll, nowIso, type Area } from '../db';
+import { db, deleteTrackedTime, exportAll, importAll, nowIso, resetEverything, type Area } from '../db';
 import { useAreas, useSubAreas } from '../hooks';
 import { iconFor } from '../icons';
 
@@ -18,6 +18,7 @@ export default function SettingsPage() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [presentAlert] = useIonAlert();
   const [presentToast] = useIonToast();
+  const [presentActionSheet] = useIonActionSheet();
   const intervalCount = useLiveQuery(() => db.intervals.count()) ?? 0;
   const persisted = useLiveQuery(async () => (navigator.storage?.persisted ? navigator.storage.persisted() : false));
 
@@ -48,6 +49,58 @@ export default function SettingsPage() {
     a.download = name;
     a.click();
     URL.revokeObjectURL(a.href);
+  }
+
+  function confirmThen(header: string, message: string, action: () => Promise<void>, done: string) {
+    presentAlert({
+      header,
+      message,
+      buttons: [
+        { text: 'Cancel', role: 'cancel' },
+        {
+          text: 'Delete',
+          role: 'destructive',
+          handler: async () => {
+            await action();
+            presentToast({ message: done, duration: 2000 });
+          },
+        },
+      ],
+    });
+  }
+
+  function startFresh() {
+    presentActionSheet({
+      header: 'Start fresh',
+      subHeader: 'Consider exporting a backup first. This cannot be undone.',
+      buttons: [
+        {
+          text: 'Delete tracked time, keep areas',
+          role: 'destructive',
+          icon: trashOutline,
+          handler: () =>
+            confirmThen(
+              'Delete all tracked time?',
+              `All ${intervalCount} intervals and the running timer will be deleted. Your areas stay as they are.`,
+              deleteTrackedTime,
+              'Tracked time deleted',
+            ),
+        },
+        {
+          text: 'Reset everything to defaults',
+          role: 'destructive',
+          icon: refreshOutline,
+          handler: () =>
+            confirmThen(
+              'Reset everything?',
+              'All tracked time and your custom areas will be deleted, and the default areas restored.',
+              resetEverything,
+              'App reset to defaults',
+            ),
+        },
+        { text: 'Cancel', role: 'cancel' },
+      ],
+    });
   }
 
   async function onImportFile(file: File) {
@@ -132,6 +185,10 @@ export default function SettingsPage() {
             <IonIcon slot="start" icon={cloudDownloadOutline} />
             <IonLabel>Restore backup</IonLabel>
           </IonItem>
+          <IonItem button detail={false} onClick={startFresh}>
+            <IonIcon slot="start" icon={trashOutline} color="danger" />
+            <IonLabel color="danger">Delete data &amp; start fresh</IonLabel>
+          </IonItem>
         </IonList>
         <input
           ref={fileRef}
@@ -144,7 +201,7 @@ export default function SettingsPage() {
             e.target.value = '';
           }}
         />
-        <IonNote className="ion-padding version-note">Time Tracker v0.1 · local-first</IonNote>
+        <IonNote className="ion-padding version-note">Time Tracker · build {__APP_BUILD__}</IonNote>
       </IonContent>
       <AreaEditor area={editing} onClose={() => setEditing(null)} />
     </IonPage>

@@ -54,10 +54,11 @@
 /* Icon-only pill selector */
 .area-pill {
   display: flex;
-  gap: 4px;
-  padding: 6px;
+  gap: 2px;
+  padding: 4px;
   border-radius: 999px;
   background: var(--app-surface);
+  width: max-content;
   max-width: 100%;
   overflow-x: auto;
   scrollbar-width: none;
@@ -66,16 +67,18 @@
 .area-pill-btn {
   position: relative;
   overflow: hidden;
-  flex: 0 0 auto;
+  /* Shrink to fit the screen (down to 38px), scroll only beyond that. */
+  flex: 0 1 auto;
   width: 52px;
-  height: 52px;
+  min-width: 38px;
+  aspect-ratio: 1;
   border-radius: 50%;
   border: 0;
   background: transparent;
   color: var(--area-color);
   display: grid;
   place-items: center;
-  font-size: 26px;
+  font-size: 24px;
   cursor: pointer;
   transition: background 150ms, color 150ms, transform 150ms;
 }

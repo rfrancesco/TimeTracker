@@ -5,8 +5,12 @@ import { VitePWA } from 'vite-plugin-pwa';
 // GitHub Pages serves project sites under /<repo>/; CI sets BASE_PATH accordingly.
 const base = process.env.BASE_PATH ?? '/';
 
+// Shown in Settings so you can tell which version is installed.
+const build = `${(process.env.GITHUB_SHA ?? 'dev').slice(0, 7)} · ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC`;
+
 export default defineConfig({
   base,
+  define: { __APP_BUILD__: JSON.stringify(build) },
   plugins: [
     react(),
     VitePWA({

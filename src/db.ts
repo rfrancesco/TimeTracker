@@ -67,24 +67,47 @@ export const uuid = () => crypto.randomUUID();
 
 const DEFAULT_AREAS: Array<[string, string, string, string[]]> = [
   ['Sleep', 'moon', '#5C6BC0', []],
-  ['Work', 'briefcase', '#1E88E5', ['Meetings', 'Deep work', 'Email']],
+  ['Work', 'briefcase', '#1E88E5', []],
+  ['Thesis', 'school', '#00897B', []],
   ['Home', 'home', '#43A047', ['Cleaning', 'Cooking', 'Errands']],
   ['Guitar', 'musical-notes', '#F4511E', ['Technique', 'Songs']],
+  ['Music', 'headset', '#D81B60', []],
   ['Reading', 'book', '#8E24AA', []],
-  ['Sport', 'barbell', '#E53935', []],
+  ['Cinema', 'film', '#FFB300', []],
 ];
 
-/** Seed default areas on first launch. */
-db.on('populate', (tx) => {
+type Adder = { add: (item: never) => unknown };
+
+/** Insert the default areas; works both inside 'populate' and in a normal transaction. */
+function seedDefaults(areas: Adder, subAreas: Adder) {
   const t = nowIso();
   DEFAULT_AREAS.forEach(([name, icon, color, subs], i) => {
     const id = uuid();
-    tx.table('areas').add({ id, name, icon, color, order: i, updatedAt: t });
+    areas.add({ id, name, icon, color, order: i, updatedAt: t } as never);
     subs.forEach((s, j) =>
-      tx.table('subAreas').add({ id: uuid(), areaId: id, name: s, order: j, updatedAt: t }),
+      subAreas.add({ id: uuid(), areaId: id, name: s, order: j, updatedAt: t } as never),
     );
   });
-});
+}
+
+/** Seed default areas on first launch. */
+db.on('populate', (tx) => seedDefaults(tx.table('areas'), tx.table('subAreas')));
+
+/** Delete all tracked time (and the running timer), keeping areas as configured. */
+export async function deleteTrackedTime() {
+  await db.transaction('rw', [db.intervals, db.active], async () => {
+    await db.intervals.clear();
+    await db.active.clear();
+  });
+}
+
+/** Delete everything and restore the default areas. */
+export async function resetEverything() {
+  await db.transaction('rw', [db.areas, db.subAreas, db.intervals, db.active], async () => {
+    await Promise.all([db.areas.clear(), db.subAreas.clear(), db.intervals.clear(), db.active.clear()]);
+    seedDefaults(db.areas, db.subAreas);
+  });
+}
 
 /** Ask the browser not to evict our data under storage pressure. */
 export async function requestPersistentStorage() {

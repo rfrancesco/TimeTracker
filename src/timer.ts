@@ -1,6 +1,6 @@
 import { db, nowIso, uuid, type ActiveTimer } from './db';
 
-/** Below this, switching area/sub-area relabels the running timer instead of splitting it. */
+/** Below this, switching relabels the running timer instead of splitting it, and stopping discards it. */
 export const RELABEL_THRESHOLD_MS = 60_000;
 
 const getActive = () => db.active.get('current');
@@ -44,12 +44,15 @@ export async function track(areaId: string, subAreaId: string | null) {
   });
 }
 
+/** Stop tracking. Timers shorter than a minute are discarded instead of saved. */
 export async function stop() {
-  const now = nowIso();
+  const nowMs = Date.now();
   await db.transaction('rw', [db.active, db.intervals], async () => {
     const a = await getActive();
     if (!a) return;
-    await saveInterval(a, now);
+    if (nowMs - new Date(a.start).getTime() >= RELABEL_THRESHOLD_MS) {
+      await saveInterval(a, new Date(nowMs).toISOString());
+    }
     await db.active.delete('current');
   });
 }
