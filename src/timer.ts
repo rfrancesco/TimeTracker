@@ -50,12 +50,15 @@ export async function discardActive() {
   await db.active.delete('current');
 }
 
+/** "1:05:09" (running clock, seconds floored) or "1h 05m" (rounded to the nearest minute). */
 export function formatDuration(ms: number, withSeconds = true) {
-  const total = Math.max(0, Math.floor(ms / 1000));
-  const h = Math.floor(total / 3600);
-  const m = Math.floor((total % 3600) / 60);
-  const s = total % 60;
   const pad = (n: number) => String(n).padStart(2, '0');
-  if (!withSeconds) return h ? `${h}h ${pad(m)}m` : `${m}m`;
-  return `${h}:${pad(m)}:${pad(s)}`;
+  if (!withSeconds) {
+    const minutes = Math.max(0, Math.round(ms / 60_000));
+    const h = Math.floor(minutes / 60);
+    const m = minutes % 60;
+    return h ? `${h}h ${pad(m)}m` : `${m}m`;
+  }
+  const total = Math.max(0, Math.floor(ms / 1000));
+  return `${Math.floor(total / 3600)}:${pad(Math.floor((total % 3600) / 60))}:${pad(total % 60)}`;
 }

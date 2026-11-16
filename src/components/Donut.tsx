@@ -1,3 +1,20 @@
+import { useId } from 'react';
+
+/** Use as a slice colour to draw faint diagonal stripes (time before tracking started). */
+export const HATCH = '__hatch';
+
+/** SVG <defs> for the HATCH fill; `id` must be unique per <svg>. */
+export function HatchDefs({ id }: { id: string }) {
+  return (
+    <defs>
+      <pattern id={id} width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+        <rect width="6" height="6" fill="var(--viz-upcoming)" />
+        <line x1="0" y1="0" x2="0" y2="6" stroke="var(--viz-untracked)" strokeWidth="3" />
+      </pattern>
+    </defs>
+  );
+}
+
 export interface Slice {
   id: string;
   label: string;
@@ -35,6 +52,8 @@ function arcPath(a0: number, a1: number, outer: number) {
 
 /** Donut chart; tap a slice to select it (tap again or the hole to clear). */
 export default function Donut({ slices, selectedId, onSelect, center, ariaLabel }: Props) {
+  const hatchId = `hatch-${useId().replace(/:/g, '')}`;
+  const fill = (c: string) => (c === HATCH ? `url(#${hatchId})` : c);
   const total = slices.reduce((a, s) => a + s.value, 0);
   let a = -Math.PI / 2;
   const visible = slices.filter((s) => s.value > 0);
@@ -42,6 +61,7 @@ export default function Donut({ slices, selectedId, onSelect, center, ariaLabel 
   return (
     <div className="donut">
       <svg viewBox="0 0 200 200" role="img" aria-label={ariaLabel}>
+        <HatchDefs id={hatchId} />
         <circle cx={C} cy={C} r={r - 1} fill="transparent" onClick={() => onSelect(null)} />
         {visible.length === 1 ? (
           <circle
@@ -49,7 +69,7 @@ export default function Donut({ slices, selectedId, onSelect, center, ariaLabel 
             cy={C}
             r={(R + r) / 2}
             fill="none"
-            stroke={visible[0].color}
+            stroke={fill(visible[0].color)}
             strokeWidth={R - r}
             className="donut-slice"
             onClick={() => onSelect(selectedId === visible[0].id ? null : visible[0].id)}
@@ -68,7 +88,7 @@ export default function Donut({ slices, selectedId, onSelect, center, ariaLabel 
               <path
                 key={s.id}
                 d={d}
-                fill={s.color}
+                fill={fill(s.color)}
                 className={`donut-slice${selectedId && !selected ? ' dimmed' : ''}`}
                 onClick={() => onSelect(selected ? null : s.id)}
               >

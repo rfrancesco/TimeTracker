@@ -67,6 +67,32 @@ export interface Report {
   bySub: Map<string, Map<string | null, number>>;
   /** Per day of `range.days`: ms per area. */
   perDay: Map<string, number>[];
+  /** The whole period split into what isn't tracked time (see `Rest`). */
+  rest: Rest;
+  /** The same split for each day of `range.days`. */
+  perDayRest: Rest[];
+}
+
+/**
+ * The untracked part of a span: `length` = tracked + untracked + upcoming + noData.
+ * - untracked: past time with no record
+ * - upcoming:  time that hasn't happened yet
+ * - noData:    past time before the very first record (tracking hadn't started)
+ */
+export interface Rest {
+  length: number;
+  untracked: number;
+  upcoming: number;
+  noData: number;
+}
+
+function restOf(a: number, b: number, tracked: number, now: number, firstEver: number | null): Rest {
+  const len = (x: number, y: number) => Math.max(0, y - x);
+  const length = b - a;
+  const upcoming = len(Math.max(a, now), b);
+  const noData = len(a, Math.min(b, now, firstEver ?? Infinity));
+  const untracked = Math.max(0, length - upcoming - noData - tracked);
+  return { length, untracked, upcoming, noData };
 }
 
 interface Piece {
@@ -126,5 +152,10 @@ export function buildReport(
   const available = Math.max(0, to - from);
   const availableDays = range.days.filter((d, i) => dayEdges[i + 1] > from && d < to).length;
 
-  return { total, available, availableDays, byArea, bySub, perDay };
+  const rest = restOf(range.start, range.end, total, now, firstEver);
+  const perDayRest = range.days.map((d, i) =>
+    restOf(d, dayEdges[i + 1], [...perDay[i].values()].reduce((x, y) => x + y, 0), now, firstEver),
+  );
+
+  return { total, available, availableDays, byArea, bySub, perDay, rest, perDayRest };
 }

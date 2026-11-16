@@ -5,7 +5,7 @@ import {
   IonTitle, IonToggle, IonToolbar,
 } from '@ionic/react';
 import { barChartOutline, chevronBack, chevronDown, chevronForward, chevronUp } from 'ionicons/icons';
-import Donut, { type Slice } from '../components/Donut';
+import Donut, { HATCH, type Slice } from '../components/Donut';
 import DayBars from '../components/DayBars';
 import { db, intervalsOverlapping } from '../db';
 import { useActive, useAreas, useNow, useSubAreas } from '../hooks';
@@ -13,7 +13,6 @@ import { iconFor } from '../icons';
 import { buildReport, periodLabel, periodRange, shiftPeriod, type Period } from '../report';
 import { formatDuration } from '../timer';
 
-const UNTRACKED = '__untracked';
 
 const loadPref = (k: string, d: boolean) => {
   try {
@@ -38,7 +37,8 @@ export default function ReportPage() {
   const now = useNow(30_000);
   const [period, setPeriod] = useState<Period>('day');
   const [anchor, setAnchor] = useState(() => Date.now());
-  const [showUntracked, setShowUntracked] = useState(() => loadPref('report.untracked', true));
+  // Full period: the chart covers the whole day/week/month (incl. untracked and what's still to come).
+  const [full, setFull] = useState(() => loadPref('report.full', true));
   const [selected, setSelected] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
@@ -66,8 +66,14 @@ export default function ReportPage() {
     [range, intervals, active, now, firstEver],
   );
 
-  const untracked = Math.max(0, report.available - report.total);
-  const base = showUntracked ? report.total + untracked : report.total;
+  const { rest } = report;
+  // The non-area parts of the period, in time order around the chart.
+  const restParts = [
+    { id: '__nodata', label: 'Before tracking', color: HATCH, dot: 'nodata-dot', value: rest.noData },
+    { id: '__untracked', label: 'Untracked', color: 'var(--viz-untracked)', dot: 'untracked-dot', value: rest.untracked },
+    { id: '__upcoming', label: 'Still to come', color: 'var(--viz-upcoming)', dot: 'upcoming-dot', value: rest.upcoming },
+  ].filter((r) => r.value > 0);
+  const base = full ? rest.length : report.total;
   const isCurrent = range.start <= now && now < range.end;
   const canGoNext = shiftPeriod(period, anchor, 1) <= now;
 
@@ -79,11 +85,13 @@ export default function ReportPage() {
   // Ranked areas; every area gets its own slice (the list below labels each one).
   const ranked = [...report.byArea.entries()].sort((a, b) => b[1] - a[1]);
   const slices: Slice[] = useMemo(() => {
-    const out: Slice[] = ranked.map(([id, ms]) => ({ id, label: areaInfo(id).name, color: areaInfo(id).color, value: ms }));
-    if (showUntracked && untracked > 0) out.push({ id: UNTRACKED, label: 'Untracked', color: 'var(--viz-untracked)', value: untracked });
-    return out;
+    const areaSlices: Slice[] = ranked.map(([id, ms]) => ({ id, label: areaInfo(id).name, color: areaInfo(id).color, value: ms }));
+    if (!full) return areaSlices;
+    const part = (id: string) => restParts.filter((r) => r.id === id);
+    // Clockwise from the top: before tracking, the areas, untracked, still to come.
+    return [...part('__nodata'), ...areaSlices, ...part('__untracked'), ...part('__upcoming')];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ranked.map((r) => r.join()).join(), showUntracked, untracked, areas]);
+  }, [ranked.map((r) => r.join()).join(), full, rest.noData, rest.untracked, rest.upcoming, areas]);
 
   // Stacking order for day bars = the user's area order (stable across days).
   const series = areas.map((a) => ({ id: a.id, color: a.color }));
@@ -91,7 +99,11 @@ export default function ReportPage() {
   const sel = slices.find((s) => s.id === selected);
   const center = sel
     ? { value: dur(sel.value), caption: `${sel.label} · ${pct(sel.value, base)}` }
-    : { value: dur(report.total), caption: period === 'day' ? 'tracked' : `tracked · ${report.availableDays} d` };
+    : {
+        value: dur(report.total),
+        caption: full ? `tracked of ${dur(rest.length)}` : period === 'day' ? 'tracked' : `tracked · ${report.availableDays} d`,
+      };
+  const fullLabel = period === 'day' ? 'Full day' : period === 'week' ? 'Full week' : 'Full month';
 
   const avgPerDay = report.availableDays ? report.total / report.availableDays : 0;
   const empty = report.total === 0;
@@ -160,7 +172,9 @@ export default function ReportPage() {
               <div className="hero-value">{dur(report.total)}</div>
               <div className="hero-caption">
                 {period === 'day'
-                  ? `tracked${untracked > 0 ? ` · ${dur(untracked)} untracked` : ''}`
+                  ? ['tracked', rest.untracked > 0 && `${dur(rest.untracked)} untracked`, rest.upcoming > 0 && `${dur(rest.upcoming)} to go`]
+                      .filter(Boolean)
+                      .join(' · ')
                   : `tracked · ${dur(avgPerDay)} per day on average over ${report.availableDays} day${report.availableDays === 1 ? '' : 's'}`}
               </div>
             </section>
@@ -177,15 +191,15 @@ export default function ReportPage() {
               <div className="report-list-header">
                 <span>By area</span>
                 <IonToggle
-                  checked={showUntracked}
+                  checked={full}
                   labelPlacement="start"
                   onIonChange={(e) => {
-                    setShowUntracked(e.detail.checked);
-                    savePref('report.untracked', e.detail.checked);
-                    if (!e.detail.checked && selected === UNTRACKED) setSelected(null);
+                    setFull(e.detail.checked);
+                    savePref('report.full', e.detail.checked);
+                    if (!e.detail.checked && selected?.startsWith('__')) setSelected(null);
                   }}
                 >
-                  Untracked
+                  {fullLabel}
                 </IonToggle>
               </div>
 
@@ -234,23 +248,24 @@ export default function ReportPage() {
                 );
               })}
 
-              {showUntracked && untracked > 0 && (
-                <div className={`report-row-wrap${selected && selected !== UNTRACKED ? ' dimmed' : ''}`}>
-                  <button className="report-row" onClick={() => setSelected(selected === UNTRACKED ? null : UNTRACKED)}>
-                    <span className="dot untracked-dot" />
-                    <span className="row-main">
-                      <span className="row-top">
-                        <span className="name">Untracked</span>
-                        <span className="dur">{dur(untracked)}</span>
-                        <span className="pct">{pct(untracked, base)}</span>
+              {full &&
+                restParts.map((r) => (
+                  <div key={r.id} className={`report-row-wrap${selected && selected !== r.id ? ' dimmed' : ''}`}>
+                    <button className="report-row" onClick={() => setSelected(selected === r.id ? null : r.id)}>
+                      <span className={`dot ${r.dot}`} />
+                      <span className="row-main">
+                        <span className="row-top">
+                          <span className="name rest-name">{r.label}</span>
+                          <span className="dur">{dur(r.value)}</span>
+                          <span className="pct">{pct(r.value, base)}</span>
+                        </span>
+                        <span className="share-track">
+                          <span className={`share-bar ${r.dot}`} style={{ width: pct(r.value, base) }} />
+                        </span>
                       </span>
-                      <span className="share-track">
-                        <span className="share-bar" style={{ width: pct(untracked, base), background: 'var(--viz-untracked)' }} />
-                      </span>
-                    </span>
-                  </button>
-                </div>
-              )}
+                    </button>
+                  </div>
+                ))}
             </div>
 
             {period !== 'day' && (
@@ -264,6 +279,7 @@ export default function ReportPage() {
                   selected={selectedDay}
                   onSelect={setSelectedDay}
                   compactLabels={period === 'month'}
+                  rest={full ? report.perDayRest : undefined}
                 />
                 {dayDetail && selectedDay !== null && (
                   <div className="day-detail">
@@ -282,6 +298,22 @@ export default function ReportPage() {
                             {areaInfo(id).name} {dur(ms)}
                           </span>
                         ))}
+                      {full &&
+                        selectedDay !== null &&
+                        (
+                          [
+                            ['untracked-dot', 'Untracked', report.perDayRest[selectedDay].untracked],
+                            ['upcoming-dot', 'Still to come', report.perDayRest[selectedDay].upcoming],
+                            ['nodata-dot', 'Before tracking', report.perDayRest[selectedDay].noData],
+                          ] as const
+                        )
+                          .filter(([, , v]) => v > 0)
+                          .map(([cls, label, v]) => (
+                            <span key={label} className="day-detail-item">
+                              <span className={`swatch ${cls}`} />
+                              {label} {dur(v)}
+                            </span>
+                          ))}
                     </div>
                     <IonButton
                       fill="clear"

@@ -350,7 +350,9 @@ ion-item.row-break { --border-width: 0 0 3px 0; }
 
 /* ---------- Reports ---------- */
 :root {
-  --viz-untracked: color-mix(in srgb, var(--ion-text-color, #000) 16%, var(--ion-background-color, #fff));
+  --viz-untracked: color-mix(in srgb, var(--ion-text-color, #000) 30%, var(--ion-background-color, #fff));
+  /* time that hasn't happened yet: an empty track, clearly lighter than untracked */
+  --viz-upcoming: color-mix(in srgb, var(--ion-text-color, #000) 8%, var(--ion-background-color, #fff));
   --viz-grid: color-mix(in srgb, var(--ion-text-color, #000) 10%, var(--ion-background-color, #fff));
   --viz-muted: color-mix(in srgb, var(--ion-text-color, #000) 60%, var(--ion-background-color, #fff));
 }
@@ -436,6 +438,12 @@ ion-item.row-break { --border-width: 0 0 3px 0; }
   flex: 0 0 auto;
 }
 .untracked-dot { background: var(--viz-untracked); }
+.upcoming-dot { background: var(--viz-upcoming); box-shadow: inset 0 0 0 1px var(--viz-untracked); }
+.nodata-dot {
+  background: repeating-linear-gradient(45deg, var(--viz-untracked) 0 3px, var(--viz-upcoming) 3px 6px);
+}
+.share-bar.upcoming-dot, .share-bar.untracked-dot, .share-bar.nodata-dot { box-shadow: none; }
+.rest-name { color: var(--viz-muted); }
 .row-main { flex: 1; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .row-top { display: flex; align-items: baseline; gap: 8px; }
 .row-top .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
