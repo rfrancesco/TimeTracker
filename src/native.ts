@@ -4,6 +4,33 @@ import { Capacitor, registerPlugin, type PluginListenerHandle } from '@capacitor
 import { db } from './db';
 import { stopAt, undoStop } from './timer';
 import { pushUndo } from './undo';
+import { iconFor } from './icons';
+import { onColor } from './color';
+
+/** The area's icon as a white-on-transparent PNG (base64), for the notification and chip. */
+const glyphs = new Map<string, Promise<string | undefined>>();
+function glyphPng(key: string) {
+  if (!glyphs.has(key)) {
+    glyphs.set(
+      key,
+      (async () => {
+        const img = new Image();
+        img.src = iconFor(key);
+        await img.decode();
+        const size = 96;
+        const canvas = document.createElement('canvas');
+        canvas.width = canvas.height = size;
+        const ctx = canvas.getContext('2d')!;
+        ctx.drawImage(img, 0, 0, size, size);
+        ctx.globalCompositeOperation = 'source-in';
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, size, size);
+        return canvas.toDataURL('image/png').split(',')[1];
+      })().catch(() => undefined),
+    );
+  }
+  return glyphs.get(key)!;
+}
 
 /**
  * Bridge to the Android wrapper (separate repo). In a browser/PWA none of this
@@ -12,7 +39,13 @@ import { pushUndo } from './undo';
  * and applied here through the normal stopAt + undo path.
  */
 interface TimeTrackerPlugin {
-  showTimer(o: { start: number; title: string; color?: string }): Promise<{ shown: boolean }>;
+  showTimer(o: {
+    start: number;
+    title: string;
+    color?: string;
+    onColor?: string;
+    icon?: string; // base64 PNG, white glyph on transparent (older wrappers ignore it)
+  }): Promise<{ shown: boolean }>;
   hideTimer(): Promise<void>;
   takePendingStop(): Promise<{ start?: number; end?: number }>;
   shareFile(o: { name: string; text: string; mimeType?: string }): Promise<void>;
@@ -78,7 +111,10 @@ export function NativeTimerSync() {
     return {
       start: Date.parse(a.start),
       title: [area?.name ?? 'Timer', sub?.name].filter(Boolean).join(' · '),
+      // The colour exactly as chosen (the system draws the notification in its own theme).
       color: area?.color,
+      onColor: area ? onColor(area.color) : undefined,
+      iconKey: area?.icon,
     };
   });
   const key = state === undefined ? undefined : JSON.stringify(state);
@@ -88,8 +124,10 @@ export function NativeTimerSync() {
     const sync = async () => {
       // Just stopped: the live query re-runs with the new state and syncs then.
       if (await applyPendingStop()) return;
-      const s = key && (JSON.parse(key) as typeof state);
-      quietly(s ? native!.showTimer(s) : native!.hideTimer());
+      const s = key && (JSON.parse(key) as NonNullable<typeof state>);
+      if (!s) return void quietly(native!.hideTimer());
+      const { iconKey, ...rest } = s;
+      quietly(native!.showTimer({ ...rest, icon: iconKey ? await glyphPng(iconKey) : undefined }));
     };
     sync();
     // Back in the foreground: apply a Stop from the notification, and bring the

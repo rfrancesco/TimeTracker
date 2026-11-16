@@ -53,26 +53,48 @@ const FAKE_NATIVE = () => {
   const last = async () => (await calls()).at(-1);
   const activeStart = () => p.evaluate(() => new Promise((r) => { const q = indexedDB.open('timetracker'); q.onsuccess = () => { q.result.transaction('active').objectStore('active').get('current').onsuccess = (e) => r(e.target.result && Date.parse(e.target.result.start)); }; }));
   const tap = async (name) => { await p.locator(`.timer-layout .area-pill-btn[aria-label="${name}"]`).click(); await p.waitForTimeout(400); };
+  const j = (x) => JSON.stringify(x, (k, v) => (k === 'icon' && typeof v === 'string' ? `<png ${v.length} b64>` : v));
   const ff = (min) => p.clock.fastForward(min * 60000);
   const visible = () => p.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
 
   const first = await calls();
-  lib.report('idle on launch → notification hidden, never shown', first.length >= 1 && first.every(([m]) => m === 'hideTimer'), JSON.stringify(first));
+  lib.report('idle on launch → notification hidden, never shown', first.length >= 1 && first.every(([m]) => m === 'hideTimer'), j(first));
 
   await tap('Guitar');
   const start = await activeStart();
   let l = await last();
   const guitarColor = await p.evaluate(() => new Promise((r) => { const q = indexedDB.open('timetracker'); q.onsuccess = () => { q.result.transaction('areas').objectStore('areas').getAll().onsuccess = (e) => r(e.target.result.find((a) => a.name === 'Guitar').color); }; }));
-  lib.report('start → showTimer with the start time, area name and stored colour', l[0] === 'showTimer' && l[1].start === start && l[1].title === 'Guitar' && l[1].color === guitarColor, JSON.stringify(l));
+  lib.report('start → showTimer with the start time, area name and stored colour', l[0] === 'showTimer' && l[1].start === start && l[1].title === 'Guitar' && l[1].color === guitarColor, j(l));
+
+  // The area's icon travels as a white-on-transparent PNG, plus the readable ink for the badge.
+  const glyph = await p.evaluate(async ([png, color, ink]) => {
+    const img = new Image(); img.src = 'data:image/png;base64,' + png; await img.decode();
+    const c = document.createElement('canvas'); c.width = img.width; c.height = img.height;
+    const x = c.getContext('2d'); x.drawImage(img, 0, 0);
+    const d = x.getImageData(0, 0, c.width, c.height).data;
+    let opaque = 0, nonWhite = 0;
+    for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 200) { opaque++; if (d[i] < 250 || d[i + 1] < 250 || d[i + 2] < 250) nonWhite++; }
+    // preview of the native badge: glyph in `ink` on a circle of the area colour
+    const b = document.createElement('canvas'); b.width = b.height = 192; const g = b.getContext('2d');
+    g.fillStyle = color; g.beginPath(); g.arc(96, 96, 96, 0, 7); g.fill();
+    const t = document.createElement('canvas'); t.width = t.height = 192; const tg = t.getContext('2d');
+    tg.drawImage(img, 42, 42, 108, 108); tg.globalCompositeOperation = 'source-in'; tg.fillStyle = ink; tg.fillRect(0, 0, 192, 192);
+    g.drawImage(t, 0, 0);
+    document.body.insertAdjacentHTML('beforeend', `<img id="badge-preview" src="${b.toDataURL()}" style="position:fixed;top:0;left:0;z-index:99999;background:#222;padding:8px">`);
+    return { w: img.width, h: img.height, opaque, nonWhite, corner: d[3] };
+  }, [l[1].icon, l[1].color, l[1].onColor]);
+  await p.locator('#badge-preview').screenshot({ path: `${lib.OUT}/native-badge.png` });
+  await p.evaluate(() => document.getElementById('badge-preview').remove());
+  lib.report('the area icon is sent as a white glyph on transparent, with the readable ink', glyph.w === 96 && glyph.opaque > 500 && glyph.nonWhite === 0 && glyph.corner === 0 && /^#[0-9a-f]{6}$/i.test(l[1].onColor), JSON.stringify({ ...glyph, onColor: l[1].onColor }));
 
   await ff(0.5); await tap('Work');
   l = await last();
-  lib.report('relabel → notification updated, same start', l[0] === 'showTimer' && l[1].title === 'Work' && l[1].start === start, JSON.stringify(l));
+  lib.report('relabel → notification updated, same start', l[0] === 'showTimer' && l[1].title === 'Work' && l[1].start === start, j(l));
 
   const before = (await calls()).length;
   await visible(); await p.waitForTimeout(300);
   l = await last();
-  lib.report('back in the foreground → notification re-posted (in case it was swiped away)', (await calls()).length > before && l[0] === 'showTimer', JSON.stringify(l));
+  lib.report('back in the foreground → notification re-posted (in case it was swiped away)', (await calls()).length > before && l[0] === 'showTimer', j(l));
 
   // Stop on the notification while the app is alive.
   await ff(10);
@@ -83,7 +105,7 @@ const FAKE_NATIVE = () => {
   lib.report('…and it can be undone with ↶', await p.locator('.undo-button').evaluate((e) => e.classList.contains('show')));
   await p.locator('.undo-button').click(); await p.waitForTimeout(500);
   l = await last();
-  lib.report('undo → timer resumes and the notification comes back', (await db()) === '[] ▶ Work since 18:00' && l[0] === 'showTimer' && l[1].start === start, `${await db()} ${JSON.stringify(l)}`);
+  lib.report('undo → timer resumes and the notification comes back', (await db()) === '[] ▶ Work since 18:00' && l[0] === 'showTimer' && l[1].start === start, `${await db()} ${j(l)}`);
 
   // A stop that refers to an older timer is ignored.
   await p.evaluate(([s]) => window.__notificationStop(s - 3600000, s), [start]);
@@ -95,7 +117,7 @@ const FAKE_NATIVE = () => {
   await p.reload(); await p.waitForSelector('.area-pill-btn'); await p.waitForTimeout(800);
   const afterReload = await calls();
   lib.report('Stop pressed while the app was closed → applied on launch', (await db()) === '[Work 18:00–18:07] idle', await db());
-  lib.report('…and the notification is not shown again', afterReload.every(([m]) => m !== 'showTimer'), JSON.stringify(afterReload));
+  lib.report('…and the notification is not shown again', afterReload.every(([m]) => m !== 'showTimer'), j(afterReload));
   lib.report('…and it can still be undone with ↶', await p.locator('.undo-button').evaluate((e) => e.classList.contains('show')));
   await p.locator('.undo-button').click(); await p.waitForTimeout(500);
   lib.report('undo → timer resumes', (await db()) === '[] ▶ Work since 18:00', await db());
