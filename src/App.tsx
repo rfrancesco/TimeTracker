@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Navigate, Route } from 'react-router-dom';
+import { Navigate, Route, useLocation } from 'react-router-dom';
 import {
   IonApp, IonIcon, IonLabel, IonRouterOutlet, IonTabBar, IonTabButton, IonTabs, setupIonicReact,
 } from '@ionic/react';
@@ -11,7 +11,8 @@ import DayPage from './pages/DayPage';
 import ReportPage from './pages/ReportPage';
 import SettingsPage from './pages/SettingsPage';
 import { TAB_BAR_ID, setThemeColor, useActive, useAreas, useDarkMode, useNow, useToast } from './hooks';
-import { BACKGROUND_TINT, tintOverBackground } from './color';
+import { BACKGROUND_TINT, themeBackground, tintOverBackground } from './color';
+import { formatHex, parse } from 'culori';
 import { formatDuration } from './timer';
 
 import '@ionic/react/css/core.css';
@@ -55,16 +56,35 @@ function UpdateNotice() {
   return null;
 }
 
+/** The header bar colour of the other pages, read from the theme rather than hard-coded. */
+function toolbarColor(dark: boolean) {
+  const css = getComputedStyle(document.documentElement);
+  const raw = css.getPropertyValue('--ion-toolbar-background').trim() || css.getPropertyValue('--ion-background-color').trim();
+  const c = raw ? parse(raw) : undefined;
+  return c ? formatHex(c) : themeBackground(dark);
+}
+
+/**
+ * The Android status bar matches what is directly under it: the (tinted) page on
+ * Timer, the header bar everywhere else. It follows the route, so it switches on
+ * the tap, together with the tab highlight, while the new page fades in under it.
+ */
+function StatusBarSync({ areaColor, dark }: { areaColor?: string; dark: boolean }) {
+  const { pathname } = useLocation();
+  const onTimer = pathname === '/' || pathname.startsWith('/timer');
+  useEffect(() => {
+    if (onTimer) setThemeColor(areaColor ? tintOverBackground(areaColor, BACKGROUND_TINT, dark) : themeBackground(dark));
+    else setThemeColor(toolbarColor(dark));
+  }, [onTimer, areaColor, dark]);
+  return null;
+}
+
 export default function App() {
-  // While a timer runs, the tab bar and the Android status bar carry the area's
-  // colour on every page (same tint as the Timer page background).
+  // While a timer runs, the tab bar carries the area's colour on every page.
   const active = useActive();
   const areas = useAreas(true);
   const dark = useDarkMode();
   const areaColor = areas.find((a) => a.id === active?.areaId)?.color;
-  useEffect(() => {
-    setThemeColor(areaColor ? tintOverBackground(areaColor, BACKGROUND_TINT, dark) : dark ? '#1f1f1f' : '#ffffff');
-  }, [areaColor, dark]);
 
   return (
     <IonApp>
@@ -102,6 +122,7 @@ export default function App() {
           </IonTabBar>
         </IonTabs>
         <UpdateNotice />
+        <StatusBarSync areaColor={areaColor} dark={dark} />
       </IonReactRouter>
     </IonApp>
   );
