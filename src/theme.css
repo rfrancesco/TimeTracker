@@ -628,7 +628,11 @@ ion-tabs .ion-page:not(.ion-page-hidden) {
 .stop-sheet .sheet-title { margin: 4px 0 12px; font-size: 1.2rem; font-weight: 600; }
 .sheet-running { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
 .sheet-running .dot { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-size: 16px; }
-.sheet-quick { display: flex; flex-wrap: wrap; gap: 2px; margin: 0 -4px 6px; }
+.sheet-quick { display: flex; flex-wrap: nowrap; align-items: center; gap: 6px; margin: 0 -4px 6px; }
+.sheet-times { display: flex; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.sheet-times::-webkit-scrollbar { display: none; }
+.sheet-quick ion-chip { flex: none; margin-inline: 2px; --padding-start: 8px; --padding-end: 8px; padding-inline: 8px; } /* compact: the row fits on one line even at 360px */
+.discard-chip { flex: none; margin-inline-start: auto; }
 .sheet-hint { font-size: 0.85rem; color: var(--viz-muted); margin: 10px 2px 14px; }
 .sheet-hint.error { color: var(--ion-color-danger); }
 

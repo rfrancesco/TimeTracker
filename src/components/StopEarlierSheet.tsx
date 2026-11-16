@@ -61,19 +61,22 @@ export default function StopEarlierSheet({ active, area, subName, open, onClose,
               </span>
             </div>
 
+            {/* One row: the times (scroll sideways if the screen is very narrow) and 🗑 pinned right. */}
             <div className="sheet-quick">
-              {/* "Now" is always available, so there is always a way back from 🗑. */}
-              <IonChip outline={discard || end !== nowMin} onClick={() => pickTime(nowMin)}>
-                <IonLabel>Now</IonLabel>
-              </IonChip>
-              {QUICK.map((m) => {
-                const t = Math.floor((now - m * MIN) / MIN) * MIN;
-                return (
-                  <IonChip key={m} disabled={t <= start} outline={discard || end !== t} onClick={() => pickTime(t)}>
-                    <IonLabel>{m < 60 ? `${m} min ago` : '1 h ago'}</IonLabel>
-                  </IonChip>
-                );
-              })}
+              <div className="sheet-times">
+                {/* "Now" is always available, so there is always a way back from 🗑. */}
+                <IonChip outline={discard || end !== nowMin} onClick={() => pickTime(nowMin)}>
+                  <IonLabel>Now</IonLabel>
+                </IonChip>
+                {QUICK.map((m) => {
+                  const t = Math.floor((now - m * MIN) / MIN) * MIN;
+                  return (
+                    <IonChip key={m} disabled={t <= start} outline={discard || end !== t} onClick={() => pickTime(t)}>
+                      <IonLabel>{m < 60 ? `${m} min` : '1 h'}</IonLabel>
+                    </IonChip>
+                  );
+                })}
+              </div>
               <IonChip outline={!discard} className="discard-chip" aria-label="Discard this timer" onClick={() => setDiscard(true)}>
                 <IonIcon icon={trashOutline} />
               </IonChip>

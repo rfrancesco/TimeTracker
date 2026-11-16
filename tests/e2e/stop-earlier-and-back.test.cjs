@@ -19,9 +19,21 @@ const { chromium, devices } = require('playwright');
   const box = await p.locator('.stop-button').boundingBox();
   await p.mouse.move(box.x + box.width / 2, box.y + box.height / 2); await p.mouse.down(); await p.waitForTimeout(800); await p.mouse.up(); await p.waitForTimeout(700);
   console.log('long-press:      ', await p.locator('ion-modal.stop-sheet .sheet-title').innerText().catch(() => 'NO SHEET'), '| still running:', (await db()).includes('running: since'));
-  await p.locator('ion-modal.stop-sheet ion-chip', { hasText: /^15 min ago$/ }).click(); await p.waitForTimeout(200);
+  await p.locator('ion-modal.stop-sheet ion-chip', { hasText: /^15 min$/ }).click(); await p.waitForTimeout(200);
   console.log('sheet hint:      ', await p.locator('.sheet-hint').innerText());
   await p.screenshot({ path: S + '/stop-sheet.png' });
+  for (const width of [411, 390, 360]) {
+    await p.setViewportSize({ width, height: 915 }); await p.waitForTimeout(250);
+    const lay = await p.evaluate(() => {
+      const row = document.querySelector('ion-modal.stop-sheet .sheet-quick').getBoundingClientRect();
+      const chips = [...document.querySelectorAll('ion-modal.stop-sheet .sheet-quick ion-chip')].map(c => c.getBoundingClientRect());
+      const times = document.querySelector('ion-modal.stop-sheet .sheet-times');
+      const bin = chips[chips.length - 1];
+      return { oneLine: chips.every(c => Math.abs(c.top - chips[0].top) < 2), binAtRight: row.right - bin.right < 8, scrolls: times.scrollWidth > times.clientWidth };
+    });
+    lib.report(`${width}px: all chips visible on one line, 🗑 at the right end`, lay.oneLine && lay.binAtRight && !lay.scrolls, JSON.stringify(lay));
+  }
+  await p.setViewportSize({ width: 412, height: 915 }); await p.waitForTimeout(250);
   await p.locator('ion-modal.stop-sheet ion-button', { hasText: 'Stop at' }).click(); await p.waitForTimeout(900);
   { const d = await db(); lib.report('“15 min ago” stops at 18:25', d.includes('18:00–18:25') && d.includes('running: none'), d); }
   await clickUndo(); await p.waitForTimeout(500);

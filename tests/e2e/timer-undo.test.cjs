@@ -37,7 +37,7 @@ const { chromium, devices } = require('playwright');
   lib.report('undo a stop → timer resumes', (await db()) === '[] ▶ Guitar since 18:00', await db());
 
   await hold();
-  await p.locator('ion-modal.stop-sheet ion-chip', { hasText: /^5 min ago$/ }).click(); await p.waitForTimeout(200);
+  await p.locator('ion-modal.stop-sheet ion-chip', { hasText: /^5 min$/ }).click(); await p.waitForTimeout(200);
   await p.locator('ion-modal.stop-sheet ion-button', { hasText: 'Stop at' }).click(); await p.waitForTimeout(700);
   lib.report('rewind stops 5 min earlier', (await db()) === '[Guitar 18:00–18:15] idle', await db());
   await undo();
