@@ -14,6 +14,7 @@ import { localDateKey } from '../time';
 import { BackupError, parseBackup } from '../backup';
 import { getThemePref, setThemePref, type ThemePref } from '../theme';
 import { native } from '../native';
+import NativeStatusList from '../components/NativeStatusList';
 
 export default function SettingsPage() {
   const areas = useAreas();
@@ -227,6 +228,8 @@ export default function SettingsPage() {
             </IonSelect>
           </IonItem>
         </IonList>
+
+        <NativeStatusList />
 
         <IonList>
           <IonListHeader>

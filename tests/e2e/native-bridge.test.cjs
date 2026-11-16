@@ -12,7 +12,7 @@ const FAKE_NATIVE = () => {
   const saved = sessionStorage.getItem('pendingStop'); // a Stop recorded while the app was closed
   state.pending = saved ? JSON.parse(saved) : null;
   sessionStorage.removeItem('pendingStop');
-  const promise = ['showTimer', 'hideTimer', 'takePendingStop', 'shareFile', 'removeListener'];
+  const promise = ['showTimer', 'hideTimer', 'takePendingStop', 'shareFile', 'status', 'openNotificationSettings', 'removeListener'];
   window.Capacitor = {
     PluginHeaders: [{ name: 'TimeTracker', methods: [...promise.map((name) => ({ name, rtype: 'promise' })), { name: 'addListener', rtype: 'callback' }] }],
     nativePromise(_plugin, method, opts) {
@@ -22,6 +22,7 @@ const FAKE_NATIVE = () => {
         state.pending = null;
         return Promise.resolve(p || {});
       }
+      if (method === 'status') return Promise.resolve({ sdk: 37, permission: 'granted', notificationsEnabled: true, liveUpdatesAllowed: false, promotable: true, posted: true, promoted: false });
       return Promise.resolve(method === 'showTimer' ? { shown: true } : undefined);
     },
     nativeCallback(_plugin, method, _opts, cb) {
@@ -107,6 +108,20 @@ const FAKE_NATIVE = () => {
   let parsed = null;
   try { parsed = JSON.parse(share[1].text); } catch {}
   lib.report('export → native shareFile with the backup JSON', !!share && /^timetracker-\d{4}-\d{2}-\d{2}\.json$/.test(share[1].name) && parsed?.app && parsed.intervals?.length === 1, share ? share[1].name : 'not called');
+
+  // Settings → Android app: diagnostics from the native side.
+  const section = p.locator('ion-list', { has: p.locator('ion-list-header', { hasText: 'Android app' }) });
+  const rows = (await section.locator('ion-item').allInnerTexts()).map((t) => t.replace(/\s+/g, ' ').trim());
+  lib.report('Settings shows the Android app status', rows.includes('Notifications Allowed') && rows.includes('Live updates Off') && rows.includes('Timer notification Showing · not promoted'), JSON.stringify(rows));
+  await section.locator('ion-item', { hasText: 'Live updates' }).click(); await p.waitForTimeout(300);
+  lib.report('tapping it opens the system notification settings', (await calls()).some(([m]) => m === 'openNotificationSettings'));
+  await p.screenshot({ path: `${lib.OUT}/native-settings.png` });
+
+  // In a plain browser there's no such section.
+  const plain = await (await b.newContext({ ...devices['Pixel 7'] })).newPage();
+  await plain.goto(lib.BASE); await plain.waitForSelector('.area-pill-btn');
+  await plain.locator('ion-tab-button[tab="settings"]').click(); await plain.waitForTimeout(500);
+  lib.report('browser/PWA: no Android section', (await plain.locator('ion-list-header', { hasText: 'Android app' }).count()) === 0);
 
   lib.report('no page errors', errs.length === 0, errs.join(' | '));
   await b.close();

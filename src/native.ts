@@ -16,13 +16,37 @@ interface TimeTrackerPlugin {
   hideTimer(): Promise<void>;
   takePendingStop(): Promise<{ start?: number; end?: number }>;
   shareFile(o: { name: string; text: string; mimeType?: string }): Promise<void>;
+  status(): Promise<NativeStatus>;
+  openNotificationSettings(): Promise<void>;
   addListener(event: 'stop', fn: () => void): Promise<PluginListenerHandle>;
 }
+
+export interface NativeStatus {
+  sdk: number;
+  permission: string;
+  notificationsEnabled: boolean;
+  channelImportance?: number;
+  liveUpdatesAllowed?: boolean;
+  promotable?: boolean;
+  posted: boolean;
+  promoted?: boolean;
+  lastError?: string;
+  lastShown?: number;
+}
+
+/** Inside the Android wrapper (even if the plugin is missing, e.g. a broken bridge). */
+export const inWrapper = Capacitor.isNativePlatform();
 
 export const native: TimeTrackerPlugin | null =
   Capacitor.isNativePlatform() && Capacitor.isPluginAvailable('TimeTracker') ? registerPlugin<TimeTrackerPlugin>('TimeTracker') : null;
 
-const quietly = (p: Promise<unknown> | undefined) => p?.catch(() => {}); // an older wrapper may lack a method
+/** Last failed bridge call, shown in Settings → Android app. */
+export let lastBridgeError: string | null = null;
+// An older wrapper may lack a method: never let a bridge call break the app.
+const quietly = (p: Promise<unknown> | undefined) =>
+  p?.catch((e: unknown) => {
+    lastBridgeError = e instanceof Error ? e.message : String(e);
+  });
 
 /** Apply a Stop pressed on the notification, if it still refers to the running timer. */
 let applying: Promise<boolean> = Promise.resolve(false);
