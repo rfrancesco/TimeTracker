@@ -131,10 +131,50 @@ function StatusBarSync({ areaColor, dark }: { areaColor?: string; dark: boolean 
   useEffect(() => {
     const tabs = document.querySelector('ion-tabs');
     if (!tabs) return;
-    const revealed = (el: HTMLElement) => {
+    // Header height of each page, measured while it is visible (a hidden page measures 0).
+    const headerHeight = new WeakMap<HTMLElement, number>();
+    const measure = (el: HTMLElement) =>
+      requestAnimationFrame(() => headerHeight.set(el, el.querySelector('ion-header')?.getBoundingClientRect().height ?? 0));
+    const visiblePage = () =>
+      [...tabs.querySelectorAll<HTMLElement>('.ion-page')].find((x) => !x.classList.contains('ion-page-hidden'));
+    let shown = visiblePage() ?? null;
+    if (shown) measure(shown);
+    let clearUnderlay = 0;
+
+    // The colours at the top of a page and of its content.
+    const colours = (el: HTMLElement) => {
       const { areaColor: c, dark: d } = latest.current;
-      fadeStatusBar(themeBackground(d), statusTarget(el.classList.contains('timer-page'), c, d));
+      const timer = el.classList.contains('timer-page');
+      const top = statusTarget(timer, c, d);
+      return { top, content: timer ? top : themeBackground(d) };
     };
+
+    const revealed = (el: HTMLElement) => {
+      const prev = shown;
+      shown = el;
+      measure(el);
+      const next = colours(el);
+      const outlet = el.parentElement;
+      if (!prev || prev === el || !outlet) {
+        fadeStatusBar(themeBackground(latest.current.dark), next.top);
+        return;
+      }
+      // Crossfade the colours: while the new page fades in, paint the old page's
+      // colour layout (header band + content) behind it instead of the bare app
+      // background. Pages with the same header colour then don't dip at all, and
+      // the status bar blends straight from the old top colour to the new one.
+      const old = colours(prev);
+      const h = headerHeight.get(prev) ?? 0;
+      outlet.style.background = `linear-gradient(to bottom, ${old.top} 0, ${old.top} ${h}px, ${old.content} ${h}px)`;
+      outlet.style.setProperty('--underlay-top', old.top);
+      window.clearTimeout(clearUnderlay);
+      clearUnderlay = window.setTimeout(() => {
+        outlet.style.background = '';
+        outlet.style.removeProperty('--underlay-top');
+      }, PAGE_FADE.duration + 50);
+      fadeStatusBar(old.top, next.top);
+    };
+
     const observer = new MutationObserver((records) => {
       for (const r of records) {
         if (r.type === 'attributes') {
@@ -150,7 +190,10 @@ function StatusBarSync({ areaColor, dark }: { areaColor?: string; dark: boolean 
       }
     });
     observer.observe(tabs, { subtree: true, childList: true, attributes: true, attributeFilter: ['class'], attributeOldValue: true });
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      window.clearTimeout(clearUnderlay);
+    };
   }, []);
 
   // Same page, something else changed (area switched, theme): apply at once.
