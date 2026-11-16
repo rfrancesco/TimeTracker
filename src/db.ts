@@ -182,6 +182,14 @@ class TrackerDB extends Dexie {
         await subs.delete(old.id);
       }
     });
+    // v8: new "Friends" area at the end of the second row.
+    this.version(8).upgrade(async (tx) => {
+      const areas = tx.table('areas');
+      const all: Area[] = await areas.toArray();
+      if (all.some((a) => a.name === 'Friends')) return;
+      const order = Math.max(-1, ...all.map((a) => a.order)) + 1;
+      await areas.add({ id: uuid(), name: 'Friends', icon: 'people', color: '#A99F00', order, updatedAt: nowIso() });
+    });
   }
 }
 
@@ -194,7 +202,7 @@ export const uuid = () => crypto.randomUUID();
 // Colours (chosen with the user): Sleep #041A40 night sky, Work rgb(58,110,165)
 // (Windows 2000), Home relaxing sage, Thesis sky blue (calm, not a warning colour,
 // apart from hobby/relaxation colours), Errand ochre (one-off chores, kept apart
-// from the daily Home routine), Guitar+Music a red family, Reading+Cinema a
+// from the daily Home routine), Friends sunny yellow, Guitar+Music a red family, Reading+Cinema a
 // purple family (grouped by hue, separated by lightness). Validated in both themes:
 // neighbours in this order (also the report stacking order) pass the colour-vision
 // checks, and neighbours are distinguishable with normal vision.
@@ -208,6 +216,7 @@ const DEFAULT_AREAS: Array<[string, string, string, string[], boolean?]> = [
   ['Music', 'headset', '#DB795B', []],
   ['Reading', 'book', '#7A4093', []],
   ['Cinema', 'film', '#B574C9', []],
+  ['Friends', 'people', '#A99F00', []],
 ];
 
 type Adder = { add: (item: never) => unknown };
