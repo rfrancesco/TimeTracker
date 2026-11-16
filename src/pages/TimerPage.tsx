@@ -3,14 +3,15 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import {
   IonButton, IonContent, IonIcon, IonPage,
 } from '@ionic/react';
-import { playBack, stop as stopIcon } from 'ionicons/icons';
+import { arrowUndo, playBack, stop as stopIcon } from 'ionicons/icons';
 import AreaPill from '../components/AreaPill';
 import SubAreaChips from '../components/SubAreaChips';
 import { db } from '../db';
 import { useActive, useAreas, useDarkMode, useNow, useSubAreas, useToast } from '../hooks';
 import StopEarlierSheet from '../components/StopEarlierSheet';
 import { BACKGROUND_TINT, themeBackground, tintOverBackground } from '../color';
-import { formatDuration, stopAt, track, undoStop, type StopResult } from '../timer';
+import { discardActive, formatDuration, stopAt, track, undoDiscard, undoStop, undoTrack, type StopResult } from '../timer';
+import { isTopUndo, pushUndo, undoLast, useUndoCount, type UndoEntry } from '../undo';
 import { iconFor } from '../icons';
 import { startOfLocalDay } from '../time';
 
@@ -36,26 +37,52 @@ export default function TimerPage() {
   const pressTimer = useRef<number | undefined>(undefined);
   const longPressed = useRef(false);
 
-  async function doStop(endMs?: number) {
-    const name = activeArea?.name ?? 'Timer';
-    const result = await stopAt(endMs);
-    if (result) offerUndo(result, name);
+  // ---- Undo: every timer action pushes an entry; the ↶ button undoes the latest ----
+  const undoCount = useUndoCount();
+  const nameOf = (id: string) => allAreas.find((a) => a.id === id)?.name ?? 'Timer';
+
+  async function doTrack(areaId: string, subAreaId: string | null) {
+    const r = await track(areaId, subAreaId);
+    if (!r) return;
+    const label = r.kind === 'start' ? `start ${nameOf(areaId)}` : `switch to ${nameOf(areaId)}`;
+    pushUndo({ label, run: () => undoTrack(r) });
   }
-  function offerUndo(result: StopResult, name: string) {
+
+  async function doStop(endMs?: number) {
+    const rewind = endMs !== undefined;
+    const result = await stopAt(endMs);
+    if (!result) return;
+    const name = nameOf(result.previous.areaId);
+    const entry: UndoEntry = { label: rewind ? `rewind ${name}` : `stop ${name}`, run: () => undoStop(result) };
+    pushUndo(entry);
+    offerUndo(result, name, entry);
+  }
+
+  async function doDiscard() {
+    const previous = await discardActive();
+    if (!previous) return;
+    const name = nameOf(previous.areaId);
+    const entry: UndoEntry = { label: `discard ${name}`, run: () => undoDiscard(previous) };
+    pushUndo(entry);
+    toast(`Discarded ${name}`, { duration: 5000, buttons: [{ text: 'Undo', handler: () => void undoFrom(entry) }] });
+  }
+
+  async function runUndo() {
+    const { ok, label } = await undoLast();
+    if (label) toast(ok ? `Undid ${label}` : 'Can’t undo: things changed since');
+  }
+  /** The snackbar's Undo only applies if its action is still the latest one. */
+  async function undoFrom(entry: UndoEntry) {
+    if (isTopUndo(entry)) await runUndo();
+  }
+
+  function offerUndo(result: StopResult, name: string, entry: UndoEntry) {
     toast(result.saved ? `Stopped ${name}` : `Stopped ${name} (under a minute, discarded)`, {
       duration: 5000,
-      buttons: [
-        {
-          text: 'Undo',
-          handler: () => {
-            undoStop(result).then((ok) => {
-              if (!ok) toast('Can’t undo: another timer is running');
-            });
-          },
-        },
-      ],
+      buttons: [{ text: 'Undo', handler: () => void undoFrom(entry) }],
     });
   }
+
   // A press that lasts past HOLD_SHOW turns the button into REWIND and starts the
   // fill (a tap never gets there); at HOLD_DONE the "Stopped earlier?" sheet opens.
   // Releasing after the label changed cancels instead of stopping.
@@ -113,6 +140,19 @@ export default function TimerPage() {
     >
       <IonContent>
         <div className="timer-layout">
+          {/* Undo the latest timer action; only there when there is something to undo. */}
+          <IonButton
+            fill="clear"
+            className={`undo-button${undoCount ? ' show' : ''}`}
+            aria-label="Undo"
+            disabled={!undoCount}
+            onClick={() => {
+              haptic();
+              runUndo();
+            }}
+          >
+            <IonIcon slot="icon-only" icon={arrowUndo} />
+          </IonButton>
           <section className="timer-display" aria-live="polite">
             {active && activeArea ? (
               <>
@@ -144,7 +184,7 @@ export default function TimerPage() {
               haptic();
               // Re-tapping the running area keeps its sub-area.
               if (a.id === active?.areaId) return;
-              track(a.id, null);
+              doTrack(a.id, null);
             }}
           />
 
@@ -156,7 +196,7 @@ export default function TimerPage() {
               allowNone
               onSelect={(id) => {
                 haptic();
-                track(activeArea.id, id);
+                doTrack(activeArea.id, id);
               }}
             />
           )}
@@ -206,6 +246,10 @@ export default function TimerPage() {
             subName={activeSub?.name}
             open={stopSheet}
             onClose={() => setStopSheet(false)}
+            onDiscard={() => {
+              setStopSheet(false);
+              doDiscard();
+            }}
             onStop={(endMs) => {
               setStopSheet(false);
               doStop(endMs);

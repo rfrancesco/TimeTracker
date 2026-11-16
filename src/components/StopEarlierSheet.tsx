@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { IonButton, IonChip, IonContent, IonIcon, IonLabel, IonModal, IonText } from '@ionic/react';
-import { stop as stopIcon } from 'ionicons/icons';
+import { stop as stopIcon, trashOutline } from 'ionicons/icons';
 import type { ActiveTimer } from '../db';
 import type { AreaView } from '../hooks';
 import { iconFor } from '../icons';
@@ -14,6 +14,7 @@ interface Props {
   open: boolean;
   onClose: () => void;
   onStop: (endMs: number) => void;
+  onDiscard: () => void;
 }
 
 const MIN = 60_000;
@@ -21,7 +22,7 @@ const QUICK = [5, 15, 30, 60];
 const hhmm = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
 /** "I forgot to stop": pick when the timer actually ended. */
-export default function StopEarlierSheet({ active, area, subName, open, onClose, onStop }: Props) {
+export default function StopEarlierSheet({ active, area, subName, open, onClose, onStop, onDiscard }: Props) {
   const start = active ? new Date(active.start).getTime() : 0;
   const [end, setEnd] = useState(Date.now());
 
@@ -72,6 +73,11 @@ export default function StopEarlierSheet({ active, area, subName, open, onClose,
             <IonButton expand="block" shape="round" color="danger" disabled={!!problem} onClick={() => onStop(end)}>
               <IonIcon slot="start" icon={stopIcon} />
               Stop at {hhmm(end)}
+            </IonButton>
+            {/* Throw the whole running interval away (undoable from the Timer page). */}
+            <IonButton expand="block" fill="clear" color="medium" className="discard-button" onClick={onDiscard}>
+              <IonIcon slot="start" icon={trashOutline} />
+              Discard
             </IonButton>
           </>
         )}
