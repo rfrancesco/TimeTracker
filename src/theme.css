@@ -351,7 +351,6 @@ ion-item.row-break { --border-width: 0 0 3px 0; }
 /* ---------- Reports ---------- */
 :root {
   --viz-untracked: color-mix(in srgb, var(--ion-text-color, #000) 16%, var(--ion-background-color, #fff));
-  --viz-other: color-mix(in srgb, var(--ion-text-color, #000) 45%, var(--ion-background-color, #fff));
   --viz-grid: color-mix(in srgb, var(--ion-text-color, #000) 10%, var(--ion-background-color, #fff));
   --viz-muted: color-mix(in srgb, var(--ion-text-color, #000) 60%, var(--ion-background-color, #fff));
 }

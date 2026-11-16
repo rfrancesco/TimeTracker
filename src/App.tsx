@@ -10,7 +10,7 @@ import TimerPage from './pages/TimerPage';
 import DayPage from './pages/DayPage';
 import ReportPage from './pages/ReportPage';
 import SettingsPage from './pages/SettingsPage';
-import { TAB_BAR_ID, setThemeColor, useActive, useAreas, useDarkMode, useNow } from './hooks';
+import { TAB_BAR_ID, setThemeColor, useActive, useAreas, useDarkMode, useNow, useToast } from './hooks';
 import { BACKGROUND_TINT, tintOverBackground } from './color';
 import { formatDuration } from './timer';
 
@@ -32,6 +32,27 @@ function TimerTabLabel() {
   const active = useActive();
   const now = useNow(1000, !!active);
   return <IonLabel>{active ? formatDuration(now - new Date(active.start).getTime()) : 'Timer'}</IonLabel>;
+}
+
+/**
+ * After the service worker installs a new version, the app reloads itself.
+ * Comparing the running build with the last one seen on this device tells us
+ * an update just happened (nothing is shown on the very first launch).
+ */
+function UpdateNotice() {
+  const toast = useToast();
+  useEffect(() => {
+    let last: string | null = null;
+    try {
+      last = localStorage.getItem('lastBuild');
+      localStorage.setItem('lastBuild', __APP_BUILD__);
+    } catch {
+      return;
+    }
+    if (last && last !== __APP_BUILD__) toast('App updated to the latest version', { duration: 3000 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return null;
 }
 
 export default function App() {
@@ -80,6 +101,7 @@ export default function App() {
             </IonTabButton>
           </IonTabBar>
         </IonTabs>
+        <UpdateNotice />
       </IonReactRouter>
     </IonApp>
   );
