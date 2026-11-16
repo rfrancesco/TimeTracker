@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import {
   IonButton, IonButtons, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonList, IonListHeader,
-  IonModal, IonTitle, IonToggle, IonToolbar, useIonAlert,
+  IonModal, IonReorder, IonReorderGroup, IonTitle, IonToggle, IonToolbar, useIonAlert,
+  type ReorderEndEventDetail,
 } from '@ionic/react';
 import { add, close, closeCircle, trashOutline } from 'ionicons/icons';
 import { db, nowIso, uuid, type SubArea } from '../db';
@@ -181,6 +182,11 @@ export default function AreaEditor({ area, onClose }: Props) {
 
         <IonListHeader>Sub-areas</IonListHeader>
         <IonList>
+          {/* Drag the handles to reorder; the saved order is the list order. */}
+          <IonReorderGroup
+            disabled={subs.length < 2}
+            onIonReorderEnd={(e: CustomEvent<ReorderEndEventDetail>) => setSubs(e.detail.complete(subs) as SubDraft[])}
+          >
           {subs.map((s, i) => (
             <IonItem key={s.id}>
               <IonInput
@@ -203,8 +209,10 @@ export default function AreaEditor({ area, onClose }: Props) {
               >
                 <IonIcon slot="icon-only" icon={closeCircle} />
               </IonButton>
+              <IonReorder slot="end" />
             </IonItem>
           ))}
+          </IonReorderGroup>
           <IonItem button detail={false} onClick={() => setSubs([...subs, { id: uuid(), name: '', isNew: true }])}>
             <IonIcon slot="start" icon={add} />
             Add sub-area
