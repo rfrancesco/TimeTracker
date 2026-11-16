@@ -2,6 +2,7 @@ import { createRoot } from 'react-dom/client';
 import { registerSW } from 'virtual:pwa-register';
 import './theme'; // applies the saved light/dark choice before the first render
 import App from './App';
+import { initBackGesture } from './backGesture';
 import { requestPersistentStorage } from './db';
 
 // autoUpdate: a new service worker activates and the page reloads on its own.
@@ -21,5 +22,7 @@ registerSW({
   },
 });
 requestPersistentStorage();
+
+initBackGesture(); // Android back closes dialogs in the PWA too
 
 createRoot(document.getElementById('root')!).render(<App />);

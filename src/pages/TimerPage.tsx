@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
   IonButton, IonContent, IonIcon, IonPage,
@@ -7,9 +7,10 @@ import { stop as stopIcon } from 'ionicons/icons';
 import AreaPill from '../components/AreaPill';
 import SubAreaChips from '../components/SubAreaChips';
 import { db } from '../db';
-import { useActive, useAreas, useDarkMode, useNow, useSubAreas } from '../hooks';
+import { useActive, useAreas, useDarkMode, useNow, useSubAreas, useToast } from '../hooks';
+import StopEarlierSheet from '../components/StopEarlierSheet';
 import { BACKGROUND_TINT, themeBackground, tintOverBackground } from '../color';
-import { formatDuration, stop, track } from '../timer';
+import { formatDuration, stopAt, track, undoStop, type StopResult } from '../timer';
 import { iconFor } from '../icons';
 import { startOfLocalDay } from '../time';
 
@@ -28,6 +29,43 @@ export default function TimerPage() {
   const dark = useDarkMode();
   const pageBackground = activeArea ? tintOverBackground(activeArea.color, BACKGROUND_TINT, dark) : themeBackground(dark);
   const activeSub = subAreas.find((s) => s.id === active?.subAreaId);
+
+  // ---- Stop: tap stops now; long-press opens "Stopped earlier?" ----
+  const toast = useToast();
+  const [stopSheet, setStopSheet] = useState(false);
+  const pressTimer = useRef<number | undefined>(undefined);
+  const longPressed = useRef(false);
+
+  async function doStop(endMs?: number) {
+    const name = activeArea?.name ?? 'Timer';
+    const result = await stopAt(endMs);
+    if (result) offerUndo(result, name);
+  }
+  function offerUndo(result: StopResult, name: string) {
+    toast(result.saved ? `Stopped ${name}` : `Stopped ${name} (under a minute, discarded)`, {
+      duration: 5000,
+      buttons: [
+        {
+          text: 'Undo',
+          handler: () => {
+            undoStop(result).then((ok) => {
+              if (!ok) toast('Can’t undo: another timer is running');
+            });
+          },
+        },
+      ],
+    });
+  }
+  const startPress = () => {
+    longPressed.current = false;
+    window.clearTimeout(pressTimer.current);
+    pressTimer.current = window.setTimeout(() => {
+      longPressed.current = true;
+      navigator.vibrate?.(25);
+      setStopSheet(true);
+    }, 550);
+  };
+  const cancelPress = () => window.clearTimeout(pressTimer.current);
   const subsOfActive = subAreas.filter((s) => s.areaId === active?.areaId && !s.archived);
   const elapsed = active ? now - new Date(active.start).getTime() : 0;
 
@@ -104,20 +142,44 @@ export default function TimerPage() {
             />
           )}
 
-          <IonButton
-            className="stop-button"
-            shape="round"
-            size="large"
-            color="danger"
-            disabled={!active}
-            onClick={() => {
-              haptic();
-              stop();
+          <div className="stop-wrap">
+            <IonButton
+              className="stop-button"
+              shape="round"
+              size="large"
+              color="danger"
+              disabled={!active}
+              onPointerDown={startPress}
+              onPointerUp={cancelPress}
+              onPointerLeave={cancelPress}
+              onPointerCancel={cancelPress}
+              onContextMenu={(e) => e.preventDefault()}
+              onClick={() => {
+                if (longPressed.current) {
+                  longPressed.current = false; // the long-press already opened the sheet
+                  return;
+                }
+                haptic();
+                doStop();
+              }}
+            >
+              <IonIcon slot="start" icon={stopIcon} />
+              Stop
+            </IonButton>
+            {active && <div className="stop-hint">Hold to choose when you stopped</div>}
+          </div>
+
+          <StopEarlierSheet
+            active={active}
+            area={activeArea}
+            subName={activeSub?.name}
+            open={stopSheet}
+            onClose={() => setStopSheet(false)}
+            onStop={(endMs) => {
+              setStopSheet(false);
+              doStop(endMs);
             }}
-          >
-            <IonIcon slot="start" icon={stopIcon} />
-            Stop
-          </IonButton>
+          />
 
           {totals.length > 0 && (
             <section className="today-totals">

@@ -143,21 +143,23 @@ export async function updateActive(
  * if something is anyway (e.g. the phone clock was moved back), the saved piece
  * is shortened rather than overlapping existing records.
  */
-export async function commitTimerSpan(a: ActiveTimer, end: number) {
+export async function commitTimerSpan(a: ActiveTimer, end: number): Promise<Interval | null> {
   let start = ms(a.start);
-  if (end <= start) return;
+  if (end <= start) return null;
   const conflicts = await overlapping(start, end);
   for (const c of conflicts) start = Math.max(start, ms(c.end));
-  if (end - start <= 0) return;
-  if ((await overlapping(start, end)).length) return; // still blocked: drop rather than overlap
-  await db.intervals.add({
+  if (end - start <= 0) return null;
+  if ((await overlapping(start, end)).length) return null; // still blocked: drop rather than overlap
+  const record: Interval = {
     id: uuid(),
     areaId: a.areaId,
     subAreaId: a.subAreaId,
     start: iso(start),
     end: iso(end),
     updatedAt: nowIso(),
-  });
+  };
+  await db.intervals.add(record);
+  return record;
 }
 
 /** Free space around an interval, for clamping drags/resizes in the day view. */

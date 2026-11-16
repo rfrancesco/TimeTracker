@@ -46,7 +46,7 @@ const openPicker = (e: React.MouseEvent<HTMLIonInputElement>) =>
   });
 
 /** A date field and a time field side by side, both native inputs. */
-function DateTimeField({
+export function DateTimeField({
   label,
   value,
   onChange,

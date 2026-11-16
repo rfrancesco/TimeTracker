@@ -1,4 +1,4 @@
-import { db } from './db';
+import { db, type ActiveTimer, type Interval } from './db';
 import { commitTimerSpan } from './constraints';
 
 /** Below this, switching relabels the running timer instead of splitting it, and stopping discards it. */
@@ -33,16 +33,36 @@ export async function track(areaId: string, subAreaId: string | null) {
   });
 }
 
-/** Stop tracking. Timers shorter than a minute are discarded instead of saved. */
-export async function stop() {
-  const nowMs = Date.now();
-  await db.transaction('rw', [db.active, db.intervals], async () => {
+/** What a stop did, so it can be undone. */
+export interface StopResult {
+  previous: ActiveTimer;
+  saved: Interval | null; // null when the timer was under a minute and discarded
+}
+
+/**
+ * Stop tracking at `endMs` (default: now; never before the start or in the future).
+ * Timers shorter than a minute are discarded instead of saved.
+ */
+export async function stopAt(endMs = Date.now()): Promise<StopResult | null> {
+  const end = Math.min(endMs, Date.now());
+  return db.transaction('rw', [db.active, db.intervals], async () => {
     const a = await getActive();
-    if (!a) return;
-    if (nowMs - new Date(a.start).getTime() >= RELABEL_THRESHOLD_MS) {
-      await commitTimerSpan(a, nowMs);
-    }
+    if (!a) return null;
+    const saved = end - new Date(a.start).getTime() >= RELABEL_THRESHOLD_MS ? await commitTimerSpan(a, end) : null;
     await db.active.delete('current');
+    return { previous: a, saved };
+  });
+}
+
+export const stop = () => stopAt(Date.now());
+
+/** Undo a stop: remove the saved interval and resume the same timer. False if something changed since. */
+export async function undoStop(r: StopResult): Promise<boolean> {
+  return db.transaction('rw', [db.active, db.intervals], async () => {
+    if (await getActive()) return false; // another timer was started in the meantime
+    if (r.saved) await db.intervals.delete(r.saved.id);
+    await db.active.put(r.previous);
+    return true;
   });
 }
 
