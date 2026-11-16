@@ -3,15 +3,15 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import {
   IonButton, IonButtons, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonList, IonListHeader, IonNote,
   IonPage, IonReorder, IonReorderGroup, IonSelect, IonSelectOption, IonTitle, IonToolbar, useIonActionSheet, useIonAlert,
-  useIonToast,
   type ReorderEndEventDetail,
 } from '@ionic/react';
 import { add, cloudDownloadOutline, cloudUploadOutline, contrastOutline, refreshOutline, trashOutline } from 'ionicons/icons';
 import AreaEditor from '../components/AreaEditor';
 import { db, deleteTrackedTime, exportAll, importAll, nowIso, resetEverything } from '../db';
-import { useAreas, useSubAreas, type AreaView } from '../hooks';
+import { useAreas, useSubAreas, useToast, type AreaView } from '../hooks';
 import { iconFor } from '../icons';
 import { localDateKey } from '../time';
+import { BackupError, parseBackup } from '../backup';
 import { getThemePref, setThemePref, type ThemePref } from '../theme';
 
 export default function SettingsPage() {
@@ -20,7 +20,7 @@ export default function SettingsPage() {
   const [editing, setEditing] = useState<AreaView | 'new' | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const [presentAlert] = useIonAlert();
-  const [presentToast] = useIonToast();
+  const toast = useToast();
   const [presentActionSheet] = useIonActionSheet();
   const [themePref, setThemePrefState] = useState<ThemePref>(getThemePref);
   const intervalCount = useLiveQuery(() => db.intervals.count()) ?? 0;
@@ -52,7 +52,8 @@ export default function SettingsPage() {
     a.href = URL.createObjectURL(blob);
     a.download = name;
     a.click();
-    URL.revokeObjectURL(a.href);
+    // Revoking right away can cancel the download on some mobile browsers.
+    setTimeout(() => URL.revokeObjectURL(a.href), 60_000);
   }
 
   function confirmThen(header: string, message: string, action: () => Promise<void>, done: string) {
@@ -66,7 +67,7 @@ export default function SettingsPage() {
           role: 'destructive',
           handler: async () => {
             await action();
-            presentToast({ message: done, duration: 2000 });
+            toast(done);
           },
         },
       ],
@@ -108,30 +109,40 @@ export default function SettingsPage() {
   }
 
   async function onImportFile(file: File) {
+    let data;
     try {
-      const data = JSON.parse(await file.text());
-      if (!Array.isArray(data.areas) || !Array.isArray(data.intervals)) throw new Error('Not a backup file');
-      presentAlert({
-        header: 'Replace all data?',
-        message: `This will replace your current data with ${data.intervals.length} intervals from the backup.`,
-        buttons: [
-          { text: 'Cancel', role: 'cancel' },
-          {
-            text: 'Replace',
-            role: 'destructive',
-            handler: async () => {
-              const fixed = await importAll(data);
-              presentToast({
-                message: fixed ? `Backup restored · ${fixed} overlapping records fixed` : 'Backup restored',
-                duration: 2500,
-              });
-            },
-          },
-        ],
-      });
+      data = parseBackup(await file.text()); // validates everything before asking
     } catch (err) {
-      presentToast({ message: `Import failed: ${(err as Error).message}`, duration: 3000, color: 'danger' });
+      const message = err instanceof BackupError ? err.message : `Couldn’t read the file: ${(err as Error).message}`;
+      presentAlert({ header: 'Import failed', message: `${message} Nothing was changed.`, buttons: ['OK'] });
+      return;
     }
+    const n = data.intervals.length;
+    const when = data.exportedAt ? ` from ${new Date(data.exportedAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}` : '';
+    presentAlert({
+      header: 'Replace all data?',
+      message: `This replaces everything on this device with the backup${when}: ${data.areas.length} areas and ${n} intervals${data.active.length ? ', plus a running timer' : ''}.`,
+      buttons: [
+        { text: 'Cancel', role: 'cancel' },
+        {
+          text: 'Replace',
+          role: 'destructive',
+          handler: () => {
+            // Run after the dialog closes; the database write is one transaction,
+            // so a failure leaves the current data exactly as it was.
+            importAll(data)
+              .then((fixed) => toast(fixed ? `Backup restored · ${fixed} overlapping records fixed` : 'Backup restored'))
+              .catch((err) =>
+                presentAlert({
+                  header: 'Import failed',
+                  message: `${(err as Error).message || 'The backup couldn’t be written.'} Nothing was changed.`,
+                  buttons: ['OK'],
+                }),
+              );
+          },
+        },
+      ],
+    });
   }
 
   return (

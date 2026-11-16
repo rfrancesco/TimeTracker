@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
+import { useIonToast, type ToastOptions } from '@ionic/react';
 import { db, type Area, type SubArea } from './db';
 import { displayColor, onColor } from './color';
 import { isDark, subscribeTheme } from './theme';
@@ -59,4 +60,14 @@ export function useNow(ms = 1000, enabled = true) {
 /** Tint the Android status bar / task switcher colour. */
 export function setThemeColor(color: string) {
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', color);
+}
+
+/** id of the app's tab bar, so overlays can sit above it instead of covering it. */
+export const TAB_BAR_ID = 'app-tab-bar';
+
+/** Snackbar-style message anchored just above the tab bar (never blocks the tabs). */
+export function useToast() {
+  const [present] = useIonToast();
+  return (message: string, options: ToastOptions = {}) =>
+    present({ message, duration: 2500, position: 'bottom', positionAnchor: TAB_BAR_ID, ...options });
 }

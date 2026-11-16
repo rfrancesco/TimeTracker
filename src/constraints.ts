@@ -185,43 +185,110 @@ export async function freeBounds(id: string, start: number, end: number) {
  */
 export function normalize(intervals: Interval[], active: ActiveTimer | undefined, now: number) {
   let changed = 0;
-  let result: Interval[] = [];
-  const ordered = [...intervals].sort(
-    (a, b) => a.updatedAt.localeCompare(b.updatedAt) || a.start.localeCompare(b.start),
-  );
-  for (const raw of ordered) {
-    let iv = raw;
-    if (ms(iv.end) > now) {
-      changed++;
-      iv = { ...iv, end: iso(now) };
-    }
+  const byStart = [...intervals].sort((a, b) => a.start.localeCompare(b.start));
+
+  // Fast path (every backup this app exports): already consistent, O(n log n).
+  let clean = true;
+  let prevEnd = -Infinity;
+  for (const iv of byStart) {
     const s = ms(iv.start);
     const e = ms(iv.end);
-    if (!(e > s)) {
-      changed++;
-      continue;
+    if (!(e > s) || e > now || s < prevEnd) {
+      clean = false;
+      break;
     }
-    const ops = carve(result, s, e);
-    changed += ops.deletes.length + ops.updates.length;
-    const del = new Set(ops.deletes);
-    result = result
-      .filter((r) => !del.has(r.id))
-      .map((r) => {
-        const u = ops.updates.find((x) => x.id === r.id);
-        return u ? { ...r, ...u } : r;
-      })
-      .concat(ops.adds, [iv]);
+    prevEnd = e;
   }
+
+  let result: Interval[];
+  if (clean) {
+    result = byStart;
+  } else {
+    // Slow path, O(n log n) sweep: along the timeline, each stretch belongs to
+    // the most recently edited interval covering it; consecutive stretches with
+    // the same owner are joined back up. An interval cut in two keeps its id on
+    // the first piece; later pieces get new ids.
+    const items: Array<{ iv: Interval; s: number; e: number; rank: number }> = [];
+    [...intervals]
+      .sort((a, b) => a.updatedAt.localeCompare(b.updatedAt) || a.start.localeCompare(b.start))
+      .forEach((raw, rank) => {
+        const s = ms(raw.start);
+        const e = Math.min(ms(raw.end), now);
+        if (e > s) items.push({ iv: raw, s, e, rank });
+      });
+    const times = [...new Set(items.flatMap((x) => [x.s, x.e]))].sort((a, b) => a - b);
+    const starting = new Map<number, number[]>();
+    items.forEach((x, i) => starting.set(x.s, [...(starting.get(x.s) ?? []), i]));
+
+    // Max-heap of covering items by rank (lazy removal of ended ones).
+    const heap: number[] = [];
+    const higher = (a: number, b: number) => items[a].rank > items[b].rank;
+    const push = (i: number) => {
+      heap.push(i);
+      for (let k = heap.length - 1; k > 0; ) {
+        const parent = (k - 1) >> 1;
+        if (!higher(heap[k], heap[parent])) break;
+        [heap[k], heap[parent]] = [heap[parent], heap[k]];
+        k = parent;
+      }
+    };
+    const pop = () => {
+      const last = heap.pop()!;
+      if (heap.length) {
+        heap[0] = last;
+        for (let k = 0; ; ) {
+          const l = 2 * k + 1;
+          const r = l + 1;
+          let m = k;
+          if (l < heap.length && higher(heap[l], heap[m])) m = l;
+          if (r < heap.length && higher(heap[r], heap[m])) m = r;
+          if (m === k) break;
+          [heap[k], heap[m]] = [heap[m], heap[k]];
+          k = m;
+        }
+      }
+    };
+
+    const pieces = new Map<number, Array<[number, number]>>();
+    for (let t = 0; t < times.length - 1; t++) {
+      for (const i of starting.get(times[t]) ?? []) push(i);
+      while (heap.length && items[heap[0]].e <= times[t]) pop();
+      if (!heap.length) continue;
+      const owner = heap[0];
+      const list = pieces.get(owner) ?? [];
+      const lastPiece = list[list.length - 1];
+      if (lastPiece && lastPiece[1] === times[t]) lastPiece[1] = times[t + 1];
+      else list.push([times[t], times[t + 1]]);
+      pieces.set(owner, list);
+    }
+
+    result = [];
+    const stamp = nowIso();
+    items.forEach((x, i) => {
+      const list = pieces.get(i) ?? [];
+      const unchanged = list.length === 1 && list[0][0] === ms(x.iv.start) && list[0][1] === ms(x.iv.end);
+      if (!unchanged) changed++;
+      list.forEach(([s, e], k) =>
+        result.push(
+          unchanged
+            ? x.iv
+            : { ...x.iv, id: k === 0 ? x.iv.id : uuid(), start: iso(s), end: iso(e), updatedAt: k === 0 ? x.iv.updatedAt : stamp },
+        ),
+      );
+    });
+    changed += intervals.length - items.length; // dropped: empty or entirely in the future
+    result.sort((a, b) => a.start.localeCompare(b.start));
+  }
+
   let act = active;
   if (act) {
-    const latestEnd = Math.max(-Infinity, ...result.map((r) => ms(r.end)));
+    const latestEnd = result.reduce((m, r) => Math.max(m, ms(r.end)), -Infinity);
     const start = Math.min(Math.max(ms(act.start), latestEnd), now);
     if (start !== ms(act.start)) {
       changed++;
       act = { ...act, start: iso(start) };
     }
   }
-  result.sort((a, b) => a.start.localeCompare(b.start));
   return { intervals: result, active: act, changed };
 }
 

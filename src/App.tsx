@@ -10,7 +10,7 @@ import TimerPage from './pages/TimerPage';
 import DayPage from './pages/DayPage';
 import ReportPage from './pages/ReportPage';
 import SettingsPage from './pages/SettingsPage';
-import { setThemeColor, useActive, useAreas, useDarkMode, useNow } from './hooks';
+import { TAB_BAR_ID, setThemeColor, useActive, useAreas, useDarkMode, useNow } from './hooks';
 import { BACKGROUND_TINT, tintOverBackground } from './color';
 import { formatDuration } from './timer';
 
@@ -57,6 +57,7 @@ export default function App() {
             <Route path="/" element={<Navigate to="/timer" replace />} />
           </IonRouterOutlet>
           <IonTabBar
+            id={TAB_BAR_ID}
             slot="bottom"
             className={areaColor ? 'tracking' : undefined}
             style={areaColor ? { ['--area-color' as string]: areaColor } : undefined}

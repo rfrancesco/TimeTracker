@@ -2,13 +2,12 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
   IonButton, IonButtons, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonPage, IonTitle, IonToolbar,
-  useIonToast,
 } from '@ionic/react';
 import { add, chevronBack, chevronForward, documentTextOutline, removeOutline, addOutline, todayOutline } from 'ionicons/icons';
 import IntervalEditor, { type EditorValue } from '../components/IntervalEditor';
-import { db, type Interval } from '../db';
+import { db, intervalsOverlapping, type Interval } from '../db';
 import { ConstraintError, freeBounds, saveInterval } from '../constraints';
-import { useActive, useAreas, useNow, useSubAreas } from '../hooks';
+import { useActive, useAreas, useNow, useSubAreas, useToast } from '../hooks';
 import { iconFor } from '../icons';
 import { formatDuration } from '../timer';
 import { MINUTE, addLocalDays, atLocalTime, hourMarks, localDateKey, startOfLocalDay } from '../time';
@@ -78,8 +77,7 @@ export default function DayPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draft, setDraft] = useState<{ id: string; start: number; end: number } | null>(null);
   const [editing, setEditing] = useState<EditorValue | null>(null);
-  const [presentToast] = useIonToast();
-  const toast = (message: string) => presentToast({ message, duration: 2200, position: 'bottom' });
+  const toast = useToast();
   const contentRef = useRef<HTMLIonContentElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<HTMLDivElement>(null);
@@ -162,7 +160,7 @@ export default function DayPage() {
   const endIso = new Date(dayEnd).toISOString();
   const intervals =
     useLiveQuery(
-      () => db.intervals.where('start').below(endIso).filter((i) => i.end > startIso).toArray(),
+      () => intervalsOverlapping(startIso, endIso),
       [startIso, endIso],
     ) ?? [];
 

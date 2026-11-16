@@ -7,7 +7,7 @@ import {
 import { barChartOutline, chevronBack, chevronDown, chevronForward, chevronUp } from 'ionicons/icons';
 import Donut, { type Slice } from '../components/Donut';
 import DayBars from '../components/DayBars';
-import { db } from '../db';
+import { db, intervalsOverlapping } from '../db';
 import { useActive, useAreas, useNow, useSubAreas } from '../hooks';
 import { iconFor } from '../icons';
 import { buildReport, periodLabel, periodRange, shiftPeriod, type Period } from '../report';
@@ -54,7 +54,7 @@ export default function ReportPage() {
   const endIso = new Date(range.end).toISOString();
   const intervals =
     useLiveQuery(
-      () => db.intervals.where('start').below(endIso).filter((i) => i.end > startIso).toArray(),
+      () => intervalsOverlapping(startIso, endIso),
       [startIso, endIso],
     ) ?? [];
   const first = useLiveQuery(() => db.intervals.orderBy('start').first());

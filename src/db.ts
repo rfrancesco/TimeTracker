@@ -1,5 +1,6 @@
 import Dexie, { type EntityTable } from 'dexie';
 import { normalize } from './constraints';
+import { BACKUP_APP, BACKUP_FORMAT, type Backup } from './backup';
 
 /**
  * Data model.
@@ -198,6 +199,19 @@ export async function resetEverything() {
   });
 }
 
+/**
+ * Intervals overlapping [startIso, endIso). Because intervals never overlap (see
+ * constraints.ts), these are the ones starting inside the range plus at most one
+ * that started earlier and runs into it: two indexed lookups, no full scan.
+ */
+export async function intervalsOverlapping(startIso: string, endIso: string) {
+  const [before, inside] = await Promise.all([
+    db.intervals.where('start').below(startIso).last(),
+    db.intervals.where('start').between(startIso, endIso, true, false).toArray(),
+  ]);
+  return before && before.end > startIso ? [before, ...inside] : inside;
+}
+
 /** Ask the browser not to evict our data under storage pressure. */
 export async function requestPersistentStorage() {
   try {
@@ -209,9 +223,10 @@ export async function requestPersistentStorage() {
   }
 }
 
-export async function exportAll() {
+export async function exportAll(): Promise<Backup> {
   return {
-    version: 1,
+    app: BACKUP_APP,
+    format: BACKUP_FORMAT,
     exportedAt: nowIso(),
     areas: await db.areas.toArray(),
     subAreas: await db.subAreas.toArray(),
@@ -221,7 +236,7 @@ export async function exportAll() {
 }
 
 /** Replace everything with a backup. Returns how many records had to be fixed for overlaps. */
-export async function importAll(data: Awaited<ReturnType<typeof exportAll>>) {
+export async function importAll(data: Backup) {
   const fixed = normalize(data.intervals, data.active?.[0], Date.now());
   await db.transaction('rw', [db.areas, db.subAreas, db.intervals, db.active], async () => {
     await Promise.all([db.areas.clear(), db.subAreas.clear(), db.intervals.clear(), db.active.clear()]);
