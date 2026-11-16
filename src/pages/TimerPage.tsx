@@ -166,7 +166,6 @@ export default function TimerPage() {
               <IonIcon slot="start" icon={stopIcon} />
               Stop
             </IonButton>
-            {active && <div className="stop-hint">Hold to choose when you stopped</div>}
           </div>
 
           <StopEarlierSheet
