@@ -164,7 +164,10 @@ export default function TimerPage() {
               }}
             >
               <IonIcon slot="start" icon={stopIcon} />
-              Stop
+              <span className="stop-label">
+                Stop
+                <small>hold to rewind</small>
+              </span>
             </IonButton>
           </div>
 
