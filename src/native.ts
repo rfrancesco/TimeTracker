@@ -44,9 +44,10 @@ export const native: TimeTrackerPlugin | null =
 export let lastBridgeError: string | null = null;
 // An older wrapper may lack a method: never let a bridge call break the app.
 const quietly = (p: Promise<unknown> | undefined) =>
-  p?.catch((e: unknown) => {
-    lastBridgeError = e instanceof Error ? e.message : String(e);
-  });
+  p?.then(
+    () => (lastBridgeError = null),
+    (e: unknown) => (lastBridgeError = e instanceof Error ? e.message : String(e)),
+  );
 
 /** Apply a Stop pressed on the notification, if it still refers to the running timer. */
 let applying: Promise<boolean> = Promise.resolve(false);
