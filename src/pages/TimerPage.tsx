@@ -3,7 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import {
   IonButton, IonContent, IonIcon, IonPage,
 } from '@ionic/react';
-import { stop as stopIcon } from 'ionicons/icons';
+import { playBack, stop as stopIcon } from 'ionicons/icons';
 import AreaPill from '../components/AreaPill';
 import SubAreaChips from '../components/SubAreaChips';
 import { db } from '../db';
@@ -56,16 +56,35 @@ export default function TimerPage() {
       ],
     });
   }
+  // A press that lasts past HOLD_SHOW turns the button into REWIND and starts the
+  // fill (a tap never gets there); at HOLD_DONE the "Stopped earlier?" sheet opens.
+  // Releasing after the label changed cancels instead of stopping.
+  const HOLD_SHOW = 150;
+  const HOLD_DONE = 550;
+  const [holding, setHolding] = useState(false);
+  const showTimer = useRef<number | undefined>(undefined);
+  const holdShown = useRef(false);
   const startPress = () => {
     longPressed.current = false;
+    holdShown.current = false;
     window.clearTimeout(pressTimer.current);
+    window.clearTimeout(showTimer.current);
+    showTimer.current = window.setTimeout(() => {
+      holdShown.current = true;
+      setHolding(true);
+    }, HOLD_SHOW);
     pressTimer.current = window.setTimeout(() => {
       longPressed.current = true;
       navigator.vibrate?.(25);
+      setHolding(false);
       setStopSheet(true);
-    }, 550);
+    }, HOLD_DONE);
   };
-  const cancelPress = () => window.clearTimeout(pressTimer.current);
+  const cancelPress = () => {
+    window.clearTimeout(pressTimer.current);
+    window.clearTimeout(showTimer.current);
+    setHolding(false);
+  };
   const subsOfActive = subAreas.filter((s) => s.areaId === active?.areaId && !s.archived);
   const elapsed = active ? now - new Date(active.start).getTime() : 0;
 
@@ -144,7 +163,8 @@ export default function TimerPage() {
 
           <div className="stop-wrap">
             <IonButton
-              className="stop-button"
+              className={`stop-button${holding ? ' holding' : ''}`}
+              style={{ ['--fill-ms' as string]: `${HOLD_DONE - HOLD_SHOW}ms` }}
               shape="round"
               size="large"
               color="danger"
@@ -155,18 +175,27 @@ export default function TimerPage() {
               onPointerCancel={cancelPress}
               onContextMenu={(e) => e.preventDefault()}
               onClick={() => {
-                if (longPressed.current) {
-                  longPressed.current = false; // the long-press already opened the sheet
+                if (longPressed.current || holdShown.current) {
+                  // The hold opened the sheet, or was released early (cancelled): not a tap.
+                  longPressed.current = false;
+                  holdShown.current = false;
                   return;
                 }
                 haptic();
                 doStop();
               }}
             >
-              <IonIcon slot="start" icon={stopIcon} />
-              <span className="stop-label">
-                Stop
-                <small>hold to rewind</small>
+              {/* Both labels (icon + text) share one cell, so the button is always as wide
+                  as the longer one and each is centred as a group. */}
+              <span className="stop-labels">
+                <span className={holding ? 'off' : undefined}>
+                  <IonIcon icon={stopIcon} />
+                  Stop
+                </span>
+                <span className={holding ? undefined : 'off'}>
+                  <IonIcon icon={playBack} />
+                  Rewind
+                </span>
               </span>
             </IonButton>
           </div>

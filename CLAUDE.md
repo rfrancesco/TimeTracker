@@ -62,7 +62,8 @@ on launch/resume and shows an "App updated" toast.
   underlay of the old page's colours). Keep `PAGE_FADE` in `App.tsx` and the CSS
   animation in sync.
 - New dialogs automatically get back-gesture support (Ionic overlay events).
-- Long-press Stop opens "Stopped earlier?"; every stop offers Undo.
+- Stop: a tap stops at once; holding turns it into ⏪ REWIND with a right-to-left fill and
+  opens "Stopped earlier?"; releasing early cancels (never stops). Every stop offers Undo.
 
 ## Testing
 - Test thoroughly before reporting; measure rather than eyeball (contrast, frame
