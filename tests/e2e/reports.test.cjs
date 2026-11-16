@@ -43,6 +43,7 @@ const S = lib.OUT;
   }));
   // running timer: Guitar since 18:00
   await p.locator('.area-pill-btn[aria-label="Guitar"]').click();
+  await p.waitForSelector('.stop-button'); await p.waitForTimeout(300); // let the start land before editing it
   await p.evaluate(() => new Promise(r => { const q = indexedDB.open('timetracker'); q.onsuccess = () => { const t = q.result.transaction('active', 'readwrite'); const st = t.objectStore('active'); st.get('current').onsuccess = e => { const a = e.target.result; a.start = new Date('2026-11-15T18:00:00+01:00').toISOString(); st.put(a); }; t.oncomplete = r; }; }));
   await p.locator('ion-tab-button[tab="reports"]').click(); await p.waitForTimeout(900);
   const parse = t => { const m = /(?:(\d+)h )?(\d+)m/.exec(t); return m ? (+(m[1] || 0)) * 60 + +m[2] : 0; };

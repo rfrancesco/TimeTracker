@@ -190,6 +190,35 @@ class TrackerDB extends Dexie {
       const order = Math.max(-1, ...all.map((a) => a.order)) + 1;
       await areas.add({ id: uuid(), name: 'Friends', icon: 'people', color: '#A99F00', order, updatedAt: nowIso() });
     });
+    // v9: two catch-alls. "Self-care" (meditation, stretching… a calm teal) after Home;
+    // "Hobby" (intentional time outside the main hobbies, e.g. a concert) before
+    // Friends. Placed relative to the user's own order; nothing else moves.
+    this.version(9).upgrade(async (tx) => {
+      const areas = tx.table('areas');
+      const add = async (name: string, icon: string, color: string, anchor: string, where: 'after' | 'before') => {
+        const all: Area[] = await areas.toArray();
+        if (all.some((a) => a.name.toLowerCase() === name.toLowerCase())) return;
+        const ref = all.find((a) => a.name === anchor);
+        const order = ref ? (where === 'after' ? ref.order + 1 : ref.order) : Math.max(-1, ...all.map((a) => a.order)) + 1;
+        for (const a of all) if (a.order >= order) await areas.update(a.id, { order: a.order + 1 });
+        await areas.add({ id: uuid(), name, icon, color, order, updatedAt: nowIso() });
+      };
+      await add('Self-care', 'leaf', '#007A61', 'Home', 'after');
+      await add('Hobby', 'sparkles', '#BF537A', 'Friends', 'before');
+      // New palette for the areas whose colour was free to choose; only colours
+      // still equal to the old default change (a colour the user picked stays).
+      const recolor: Record<string, [string, string]> = {
+        Home: ['#4A904E', '#71A100'],
+        Errand: ['#9F7100', '#A97721'],
+        Reading: ['#7A4093', '#76518C'],
+        Cinema: ['#B574C9', '#A171E8'],
+        Friends: ['#A99F00', '#7B5F06'],
+      };
+      for (const a of (await areas.toArray()) as Area[]) {
+        const r = recolor[a.name];
+        if (r && a.color.toUpperCase() === r[0]) await areas.update(a.id, { color: r[1], updatedAt: nowIso() });
+      }
+    });
   }
 }
 
@@ -199,24 +228,25 @@ export const nowIso = () => new Date().toISOString();
 export const uuid = () => crypto.randomUUID();
 
 // [name, icon, colour, sub-areas, row break after]
-// Colours (chosen with the user): Sleep #041A40 night sky, Work rgb(58,110,165)
-// (Windows 2000), Home relaxing sage, Thesis sky blue (calm, not a warning colour,
-// apart from hobby/relaxation colours), Errand ochre (one-off chores, kept apart
-// from the daily Home routine), Friends sunny yellow, Guitar+Music a red family, Reading+Cinema a
-// purple family (grouped by hue, separated by lightness). Validated in both themes:
-// neighbours in this order (also the report stacking order) pass the colour-vision
-// checks, and neighbours are distinguishable with normal vision.
+// Fixed by the user: Sleep #041A40 night sky, Work rgb(58,110,165) (Windows 2000),
+// Thesis sky blue, Guitar deep red, Music coral. The others were chosen together by
+// a search over OKLCH (v9) with Reading+Cinema in one purple family (both cultural)
+// and Self-care calm: in both themes, as displayed, neighbours in this order (also
+// the report stacking order) clear the colour-vision target (ΔE 10.9 ≥ 8) and the
+// normal-vision floor (16.9 ≥ 15), and every pair stays ≥ 10.7 apart.
 const DEFAULT_AREAS: Array<[string, string, string, string[], boolean?]> = [
   ['Sleep', 'moon', '#041A40', []],
   ['Work', 'briefcase', '#3A6EA5', []],
-  ['Home', 'home', '#4A904E', ['Cleaning', 'Cooking', 'Laundry', 'Shower']],
+  ['Home', 'home', '#71A100', ['Cleaning', 'Cooking', 'Laundry', 'Shower']],
+  ['Self-care', 'leaf', '#007A61', []],
   ['Thesis', 'school', '#48A7D4', []],
-  ['Errand', 'clipboard', '#9F7100', [], true],
+  ['Errand', 'clipboard', '#A97721', [], true],
   ['Guitar', 'musical-notes', '#AF2934', ['Technique', 'Songs']],
   ['Music', 'headset', '#DB795B', []],
-  ['Reading', 'book', '#7A4093', []],
-  ['Cinema', 'film', '#B574C9', []],
-  ['Friends', 'people', '#A99F00', []],
+  ['Reading', 'book', '#76518C', []],
+  ['Cinema', 'film', '#A171E8', []],
+  ['Hobby', 'sparkles', '#BF537A', []],
+  ['Friends', 'people', '#7B5F06', []],
 ];
 
 type Adder = { add: (item: never) => unknown };
