@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Navigate, Route, useLocation } from 'react-router-dom';
 import {
   IonApp, IonIcon, IonLabel, IonRouterOutlet, IonTabBar, IonTabButton, IonTabs, setupIonicReact,
@@ -64,18 +64,104 @@ function toolbarColor(dark: boolean) {
   return c ? formatHex(c) : themeBackground(dark);
 }
 
+// Must match the page fade-through in theme.css (ion-tabs .ion-page animation).
+const PAGE_FADE = { duration: 220, easing: 'cubic-bezier(0.2, 0, 0, 1)' };
+
+let cancelFade: (() => void) | null = null;
+
+/**
+ * Fade the status bar in step with the page fade-through. During a tab switch the
+ * old page vanishes at once and the new one fades in over the app background, so
+ * the top of the screen goes from the background colour to the new page's colour.
+ * The browser runs the identical animation on a hidden element and we copy its
+ * colour to the status bar each frame, so timing and easing match exactly.
+ */
+function fadeStatusBar(from: string, to: string) {
+  cancelFade?.();
+  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+    setThemeColor(to);
+    return;
+  }
+  const probe = document.createElement('div');
+  probe.style.cssText = 'position:fixed;width:0;height:0;pointer-events:none;visibility:hidden';
+  document.body.appendChild(probe);
+  const anim = probe.animate([{ color: from }, { color: to }], { ...PAGE_FADE, fill: 'forwards' });
+  setThemeColor(from); // same frame as the page change, not the next one
+  let raf = 0;
+  const step = () => {
+    const c = parse(getComputedStyle(probe).color);
+    if (c) setThemeColor(formatHex(c));
+    if (anim.playState === 'running') raf = requestAnimationFrame(step);
+    else finish();
+  };
+  const finish = () => {
+    cancelAnimationFrame(raf);
+    anim.cancel();
+    probe.remove();
+    setThemeColor(to);
+    cancelFade = null;
+  };
+  cancelFade = finish;
+  raf = requestAnimationFrame(step);
+}
+
 /**
  * The Android status bar matches what is directly under it: the (tinted) page on
- * Timer, the header bar everywhere else. It follows the route, so it switches on
- * the tap, together with the tab highlight, while the new page fades in under it.
+ * Timer, the header bar everywhere else. On a page change it fades along with the
+ * page; other changes (switching area, theme) are instant, like the page itself.
+ */
+function statusTarget(onTimer: boolean, areaColor: string | undefined, dark: boolean) {
+  if (!onTimer) return toolbarColor(dark);
+  return areaColor ? tintOverBackground(areaColor, BACKGROUND_TINT, dark) : themeBackground(dark);
+}
+
+/**
+ * Keeps the status bar in step with the page shown. Ionic reveals a tab page by
+ * removing its `ion-page-hidden` class; a MutationObserver sees that change before
+ * the frame is drawn, so the fade starts in exactly the frame the page appears,
+ * whatever caused the navigation (tab tap, back gesture…). Other changes (switching
+ * area, theme) apply instantly, like the page itself.
  */
 function StatusBarSync({ areaColor, dark }: { areaColor?: string; dark: boolean }) {
   const { pathname } = useLocation();
   const onTimer = pathname === '/' || pathname.startsWith('/timer');
+  const latest = useRef({ areaColor, dark });
+  latest.current = { areaColor, dark };
+
   useEffect(() => {
-    if (onTimer) setThemeColor(areaColor ? tintOverBackground(areaColor, BACKGROUND_TINT, dark) : themeBackground(dark));
-    else setThemeColor(toolbarColor(dark));
-  }, [onTimer, areaColor, dark]);
+    const tabs = document.querySelector('ion-tabs');
+    if (!tabs) return;
+    const revealed = (el: HTMLElement) => {
+      const { areaColor: c, dark: d } = latest.current;
+      fadeStatusBar(themeBackground(d), statusTarget(el.classList.contains('timer-page'), c, d));
+    };
+    const observer = new MutationObserver((records) => {
+      for (const r of records) {
+        if (r.type === 'attributes') {
+          // An existing page un-hidden (revisiting a tab).
+          const el = r.target as HTMLElement;
+          if (el.classList.contains('ion-page') && r.oldValue?.includes('ion-page-hidden') && !el.classList.contains('ion-page-hidden')) revealed(el);
+        } else {
+          // A page created on first visit.
+          r.addedNodes.forEach((n) => {
+            if (n instanceof HTMLElement && n.classList.contains('ion-page') && !n.classList.contains('ion-page-hidden')) revealed(n);
+          });
+        }
+      }
+    });
+    observer.observe(tabs, { subtree: true, childList: true, attributes: true, attributeFilter: ['class'], attributeOldValue: true });
+    return () => observer.disconnect();
+  }, []);
+
+  // Same page, something else changed (area switched, theme): apply at once.
+  const lastPath = useRef(pathname);
+  useEffect(() => {
+    const pageChanged = lastPath.current !== pathname;
+    lastPath.current = pathname;
+    if (pageChanged) return; // the observer fades it in with the page
+    cancelFade?.();
+    setThemeColor(statusTarget(onTimer, areaColor, dark));
+  }, [pathname, onTimer, areaColor, dark]);
   return null;
 }
 
