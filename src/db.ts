@@ -140,6 +140,48 @@ class TrackerDB extends Dexie {
         }
       }
     });
+    // v7: Home gets "Laundry"; one-off chores move out of Home into a new
+    // "Errand" area (after Thesis, taking the row break). Anything tracked as
+    // Home · Errands, including a running timer, moves to Errand.
+    this.version(7).upgrade(async (tx) => {
+      const areas = tx.table('areas');
+      const subs = tx.table('subAreas');
+      const t = nowIso();
+      const all: Area[] = await areas.toArray();
+      const home = all.find((a) => a.name === 'Home');
+      let errand = all.find((a) => a.name === 'Errand');
+      if (!errand) {
+        const thesis = all.find((a) => a.name === 'Thesis');
+        const after = thesis ?? home;
+        const order = after ? after.order + 1 : all.length;
+        for (const a of all) if (a.order >= order) await areas.update(a.id, { order: a.order + 1 });
+        errand = { id: uuid(), name: 'Errand', icon: 'clipboard', color: '#9F7100', order, updatedAt: t };
+        if (after?.breakAfter) {
+          errand.breakAfter = true;
+          await areas.update(after.id, { breakAfter: false });
+        }
+        await areas.add(errand);
+      }
+      if (!home) return;
+      const mine: SubArea[] = await subs.where('areaId').equals(home.id).toArray();
+      if (!mine.some((x) => x.name.toLowerCase() === 'laundry')) {
+        // Slot it in before "Shower" if present (matches the default order), else at the end.
+        const shower = mine.find((x) => x.name.toLowerCase() === 'shower');
+        const order = shower ? shower.order : Math.max(-1, ...mine.map((x) => x.order)) + 1;
+        for (const x of mine) if (x.order >= order) await subs.update(x.id, { order: x.order + 1 });
+        await subs.add({ id: uuid(), areaId: home.id, name: 'Laundry', order, updatedAt: t });
+      }
+      const old = mine.find((x) => x.name.toLowerCase() === 'errands');
+      if (old) {
+        await tx.table('intervals').where('areaId').equals(home.id)
+          .modify((iv: Interval) => {
+            if (iv.subAreaId === old.id) Object.assign(iv, { areaId: errand!.id, subAreaId: null, updatedAt: t });
+          });
+        const act = await tx.table('active').get('current');
+        if (act?.subAreaId === old.id) await tx.table('active').put({ ...act, areaId: errand.id, subAreaId: null });
+        await subs.delete(old.id);
+      }
+    });
   }
 }
 
@@ -151,15 +193,17 @@ export const uuid = () => crypto.randomUUID();
 // [name, icon, colour, sub-areas, row break after]
 // Colours (chosen with the user): Sleep #041A40 night sky, Work rgb(58,110,165)
 // (Windows 2000), Home relaxing sage, Thesis sky blue (calm, not a warning colour,
-// apart from hobby/relaxation colours), Guitar+Music a red family, Reading+Cinema a
+// apart from hobby/relaxation colours), Errand ochre (one-off chores, kept apart
+// from the daily Home routine), Guitar+Music a red family, Reading+Cinema a
 // purple family (grouped by hue, separated by lightness). Validated in both themes:
 // neighbours in this order (also the report stacking order) pass the colour-vision
 // checks, and neighbours are distinguishable with normal vision.
 const DEFAULT_AREAS: Array<[string, string, string, string[], boolean?]> = [
   ['Sleep', 'moon', '#041A40', []],
   ['Work', 'briefcase', '#3A6EA5', []],
-  ['Home', 'home', '#4A904E', ['Cleaning', 'Cooking', 'Errands', 'Shower']],
-  ['Thesis', 'school', '#48A7D4', [], true],
+  ['Home', 'home', '#4A904E', ['Cleaning', 'Cooking', 'Laundry', 'Shower']],
+  ['Thesis', 'school', '#48A7D4', []],
+  ['Errand', 'clipboard', '#9F7100', [], true],
   ['Guitar', 'musical-notes', '#AF2934', ['Technique', 'Songs']],
   ['Music', 'headset', '#DB795B', []],
   ['Reading', 'book', '#7A4093', []],

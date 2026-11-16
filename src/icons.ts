@@ -3,7 +3,7 @@ import {
   car, bus, train, airplane, cart, code, laptop, desktop, gameController, tv, film,
   brush, colorPalette, camera, school, library, people, person, heart, medkit, fitness,
   leaf, paw, water, bed, call, chatbubbles, mail, cash, construct, hammer, flask,
-  globe, language, mic, headset, pencil, sparkles, sunny, football, basketball, tennisball,
+  globe, language, mic, headset, pencil, sparkles, sunny, football, basketball, tennisball, clipboard, business,
 } from 'ionicons/icons';
 
 export const ICONS: Record<string, string> = {
@@ -12,7 +12,7 @@ export const ICONS: Record<string, string> = {
   football, basketball, tennisball, restaurant, cafe, cart, car, bus, train, airplane,
   'game-controller': gameController, tv, film, brush, 'color-palette': colorPalette, camera,
   people, person, call, chatbubbles, mail, heart, medkit, leaf, paw, water, cash, flask,
-  globe, sparkles, sunny,
+  globe, sparkles, sunny, clipboard, business,
 };
 
 export const iconFor = (key: string) => ICONS[key] ?? ICONS.sparkles;
