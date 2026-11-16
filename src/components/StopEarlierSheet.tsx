@@ -25,10 +25,20 @@ const hhmm = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: '2-digi
 export default function StopEarlierSheet({ active, area, subName, open, onClose, onStop, onDiscard }: Props) {
   const start = active ? new Date(active.start).getTime() : 0;
   const [end, setEnd] = useState(Date.now());
+  // 🗑 is one of the choices; the main button applies whichever is selected, so
+  // discarding always takes two deliberate taps.
+  const [discard, setDiscard] = useState(false);
 
   useEffect(() => {
-    if (open) setEnd(Math.floor(Date.now() / MIN) * MIN);
+    if (open) {
+      setEnd(Math.floor(Date.now() / MIN) * MIN);
+      setDiscard(false);
+    }
   }, [open]);
+  const pickTime = (t: number) => {
+    setDiscard(false);
+    setEnd(t);
+  };
 
   const now = Date.now();
   const problem = end <= start ? 'That’s before the timer started' : end > now ? 'That’s in the future' : null;
@@ -54,30 +64,40 @@ export default function StopEarlierSheet({ active, area, subName, open, onClose,
               {QUICK.map((m) => {
                 const t = Math.floor((now - m * MIN) / MIN) * MIN;
                 return (
-                  <IonChip key={m} disabled={t <= start} outline={end !== t} onClick={() => setEnd(t)}>
+                  <IonChip key={m} disabled={t <= start} outline={discard || end !== t} onClick={() => pickTime(t)}>
                     <IonLabel>{m < 60 ? `${m} min ago` : '1 h ago'}</IonLabel>
                   </IonChip>
                 );
               })}
+              <IonChip outline={!discard} className="discard-chip" aria-label="Discard this timer" onClick={() => setDiscard(true)}>
+                <IonIcon icon={trashOutline} />
+              </IonChip>
             </div>
 
-            <DateTimeField label="Ended" value={end} onChange={(ms) => setEnd(ms)} />
+            <div className={discard ? 'sheet-dimmed' : undefined}>
+              <DateTimeField label="Ended" value={end} onChange={(ms) => pickTime(ms)} />
+            </div>
 
-            <p className={`sheet-hint${problem ? ' error' : ''}`}>
-              {problem ??
+            <p className={`sheet-hint${problem && !discard ? ' error' : ''}`}>
+              {discard
+                ? 'Nothing is saved.'
+                : problem ??
                 (tooShort
                   ? 'Under a minute: the timer will be discarded, not saved.'
                   : `Saves ${formatDuration(end - start, false)}, ${hhmm(start)}–${hhmm(end)}.`)}
             </p>
 
-            <IonButton expand="block" shape="round" color="danger" disabled={!!problem} onClick={() => onStop(end)}>
-              <IonIcon slot="start" icon={stopIcon} />
-              Stop at {hhmm(end)}
-            </IonButton>
-            {/* Throw the whole running interval away (undoable from the Timer page). */}
-            <IonButton expand="block" fill="clear" color="medium" className="discard-button" onClick={onDiscard}>
-              <IonIcon slot="start" icon={trashOutline} />
-              Discard
+            <IonButton
+              expand="block"
+              shape="round"
+              size="large"
+              className="sheet-apply"
+              color={discard ? 'medium' : 'danger'}
+              disabled={!discard && !!problem}
+              onClick={() => (discard ? onDiscard() : onStop(end))}
+            >
+              <IonIcon slot="start" icon={discard ? trashOutline : stopIcon} />
+              {discard ? 'Discard' : `Stop at ${hhmm(end)}`}
             </IonButton>
           </>
         )}

@@ -8,18 +8,18 @@ const { chromium, devices } = require('playwright');
   await p.goto(lib.BASE); await p.waitForSelector('.area-pill-btn');
   const db = () => p.evaluate(() => new Promise(r => { const q = indexedDB.open('timetracker'); q.onsuccess = () => { const t = q.result.transaction(['intervals', 'active']); t.objectStore('intervals').getAll().onsuccess = e => { t.objectStore('active').get('current').onsuccess = e2 => { const f = s => new Date(s).toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' }); r(`intervals: [${e.target.result.map(i => f(i.start) + '–' + f(i.end)).join(', ')}] | running: ${e2.target.result ? 'since ' + f(e2.target.result.start) : 'none'}`); }; }; }; }));
   const toastMsg = () => p.evaluate(() => [...document.querySelectorAll('ion-toast')].map(t => t.message).pop() || '(none)');
-  const clickUndo = () => p.evaluate(() => { const t = [...document.querySelectorAll('ion-toast')].pop(); t.shadowRoot.querySelector('button.toast-button').click(); });
+  const clickUndo = () => p.locator('.undo-button').click();
   // ---- tap Stop + undo
   await p.locator('.area-pill-btn[aria-label="Guitar"]').click(); await p.clock.fastForward(40 * 60000); await p.waitForTimeout(300);
   await p.locator('.stop-button').click(); await p.waitForTimeout(600);
-  { const d = await db(); lib.report('tap Stop saves the interval and offers Undo', d.includes('18:00–18:40') && d.includes('running: none') && /Stopped/.test(await toastMsg()), d); }
+  { const d = await db(); lib.report('tap Stop saves the interval and offers Undo', d.includes('18:00–18:40') && d.includes('running: none') && await p.locator('.undo-button').evaluate(e => e.classList.contains('show')), d); }
   await clickUndo(); await p.waitForTimeout(500);
   { const d = await db(); lib.report('Undo resumes the same timer', d === 'intervals: [] | running: since 18:00', d); }
   // ---- long-press Stop → sheet → 15 min ago
   const box = await p.locator('.stop-button').boundingBox();
   await p.mouse.move(box.x + box.width / 2, box.y + box.height / 2); await p.mouse.down(); await p.waitForTimeout(800); await p.mouse.up(); await p.waitForTimeout(700);
   console.log('long-press:      ', await p.locator('ion-modal.stop-sheet .sheet-title').innerText().catch(() => 'NO SHEET'), '| still running:', (await db()).includes('running: since'));
-  await p.locator('ion-modal.stop-sheet ion-chip', { hasText: '15 min ago' }).click(); await p.waitForTimeout(200);
+  await p.locator('ion-modal.stop-sheet ion-chip', { hasText: /^15 min ago$/ }).click(); await p.waitForTimeout(200);
   console.log('sheet hint:      ', await p.locator('.sheet-hint').innerText());
   await p.screenshot({ path: S + '/stop-sheet.png' });
   await p.locator('ion-modal.stop-sheet ion-button', { hasText: 'Stop at' }).click(); await p.waitForTimeout(900);

@@ -63,11 +63,13 @@ on launch/resume and shows an "App updated" toast.
   animation in sync.
 - New dialogs automatically get back-gesture support (Ionic overlay events).
 - Stop: a tap stops at once; holding turns it into ⏪ REWIND with a right-to-left fill and
-  opens "Stopped earlier?" (pick an earlier end, or Discard the running interval);
+  opens "Stopped earlier?" (quick times + 🗑 as choices; the tall main button applies
+  the selection, so discarding takes two deliberate taps);
   releasing early cancels (never stops).
 - Undo: timer actions (start, area/sub-area change, stop, rewind, discard) push onto an
   in-memory stack (`src/undo.ts`); the ↶ top-right on Timer undoes the latest. Each undo
-  verifies nothing changed underneath and refuses otherwise.
+  verifies nothing changed underneath and refuses otherwise. No success toasts on Timer
+  (only "Can't undo").
 
 ## Testing
 - Test thoroughly before reporting; measure rather than eyeball (contrast, frame

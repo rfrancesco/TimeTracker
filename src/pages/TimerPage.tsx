@@ -10,8 +10,8 @@ import { db } from '../db';
 import { useActive, useAreas, useDarkMode, useNow, useSubAreas, useToast } from '../hooks';
 import StopEarlierSheet from '../components/StopEarlierSheet';
 import { BACKGROUND_TINT, themeBackground, tintOverBackground } from '../color';
-import { discardActive, formatDuration, stopAt, track, undoDiscard, undoStop, undoTrack, type StopResult } from '../timer';
-import { isTopUndo, pushUndo, undoLast, useUndoCount, type UndoEntry } from '../undo';
+import { discardActive, formatDuration, stopAt, track, undoDiscard, undoStop, undoTrack } from '../timer';
+import { pushUndo, undoLast, useUndoCount, type UndoEntry } from '../undo';
 import { iconFor } from '../icons';
 import { startOfLocalDay } from '../time';
 
@@ -55,7 +55,6 @@ export default function TimerPage() {
     const name = nameOf(result.previous.areaId);
     const entry: UndoEntry = { label: rewind ? `rewind ${name}` : `stop ${name}`, run: () => undoStop(result) };
     pushUndo(entry);
-    offerUndo(result, name, entry);
   }
 
   async function doDiscard() {
@@ -64,25 +63,13 @@ export default function TimerPage() {
     const name = nameOf(previous.areaId);
     const entry: UndoEntry = { label: `discard ${name}`, run: () => undoDiscard(previous) };
     pushUndo(entry);
-    toast(`Discarded ${name}`, { duration: 5000, buttons: [{ text: 'Undo', handler: () => void undoFrom(entry) }] });
   }
 
   async function runUndo() {
     const { ok, label } = await undoLast();
-    if (label) toast(ok ? `Undid ${label}` : 'Can’t undo: things changed since');
+    // Silent on success (the screen shows the result); speak up only if it was refused.
+    if (label && !ok) toast('Can’t undo: things changed since');
   }
-  /** The snackbar's Undo only applies if its action is still the latest one. */
-  async function undoFrom(entry: UndoEntry) {
-    if (isTopUndo(entry)) await runUndo();
-  }
-
-  function offerUndo(result: StopResult, name: string, entry: UndoEntry) {
-    toast(result.saved ? `Stopped ${name}` : `Stopped ${name} (under a minute, discarded)`, {
-      duration: 5000,
-      buttons: [{ text: 'Undo', handler: () => void undoFrom(entry) }],
-    });
-  }
-
   // A press that lasts past HOLD_SHOW turns the button into REWIND and starts the
   // fill (a tap never gets there); at HOLD_DONE the "Stopped earlier?" sheet opens.
   // Releasing after the label changed cancels instead of stopping.

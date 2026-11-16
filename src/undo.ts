@@ -20,8 +20,6 @@ export function pushUndo(entry: UndoEntry) {
   emit();
 }
 
-export const isTopUndo = (entry: UndoEntry) => stack[stack.length - 1] === entry;
-
 /** Undo the most recent action. If it can't be undone, older entries are dropped too. */
 export async function undoLast(): Promise<{ ok: boolean; label?: string }> {
   const entry = stack[stack.length - 1];
