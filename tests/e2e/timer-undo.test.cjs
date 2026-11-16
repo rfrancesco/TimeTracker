@@ -64,15 +64,25 @@ const { chromium, devices } = require('playwright');
   lib.report('undo a discard → timer back', (await db()) === '[] ▶ Guitar since 18:00', await db());
   await p.screenshot({ path: `${lib.OUT}/timer-undo-button.png` });
 
-  // several in a row: switch (split) → stop → undo, undo
+  // Only the latest action: ↶ undoes it, the same button (↷) redoes it, back and forth.
+  const label = () => p.locator('.undo-button').evaluate(e => e.ariaLabel || e.getAttribute('aria-label'));
   await ff(5); await tap('Thesis'); await ff(5); await p.locator('.stop-button').click(); await p.waitForTimeout(600);
   const two = await db();
-  await undo(); await undo();
-  lib.report('two undos in a row walk back two steps', two === '[Guitar 18:00–18:25, Thesis 18:25–18:30] idle' && (await db()) === '[] ▶ Guitar since 18:00', `${two} → ${await db()}`);
+  await undo();
+  const undone = await db(); const l1 = await label();
+  await undo();
+  const redone = await db(); const l2 = await label();
+  await undo();
+  const again = await db();
+  lib.report('↶ undoes the last action, then the button becomes ↷ Redo', two === '[Guitar 18:00–18:25, Thesis 18:25–18:30] idle' && undone === '[Guitar 18:00–18:25] ▶ Thesis since 18:25' && l1 === 'Redo', `${two} → ${undone} (${l1})`);
+  lib.report('↷ redoes it (exactly the state before the undo), then it is ↶ again', redone === two && l2 === 'Undo' && again === undone, `${redone} (${l2}) → ${again}`);
+  lib.report('only one step: undoing never walks back further than the last action', !(await db()).startsWith('[]'), await db());
+  await undo(); // redo the stop
+  lib.report('back to stopped', (await db()) === two, await db());
 
   // safety: the saved interval was edited elsewhere (e.g. Day view) → refuse, change nothing
-  await ff(5); await p.locator('.stop-button').click(); await p.waitForTimeout(600);
-  await p.evaluate(() => new Promise(r => { const q = indexedDB.open('timetracker'); q.onsuccess = () => { const t = q.result.transaction('intervals', 'readwrite'); const st = t.objectStore('intervals'); st.getAll().onsuccess = e => { const iv = e.target.result[0]; iv.end = new Date(Date.parse(iv.end) - 600000).toISOString(); st.put(iv); }; t.oncomplete = r; }; }));
+  await tap('Guitar'); await ff(5); await p.locator('.stop-button').click(); await p.waitForTimeout(600);
+  await p.evaluate(() => new Promise(r => { const q = indexedDB.open('timetracker'); q.onsuccess = () => { const t = q.result.transaction('intervals', 'readwrite'); const st = t.objectStore('intervals'); st.getAll().onsuccess = e => { const iv = e.target.result.sort((x, y) => y.start.localeCompare(x.start))[0]; iv.end = new Date(Date.parse(iv.end) - 600000).toISOString(); st.put(iv); }; t.oncomplete = r; }; }));
   const before = await db();
   await undo();
   const msg = await p.evaluate(() => [...document.querySelectorAll('ion-toast')].map(t => t.message).pop() || '');

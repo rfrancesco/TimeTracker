@@ -180,7 +180,7 @@ export default function IntervalEditor({ value, onClose }: Props) {
         {v && (
           <>
             <IonListHeader>Area{area ? ` · ${area.name}` : ''}</IonListHeader>
-            <div className="ion-padding-horizontal">
+            <div className="ion-padding-horizontal editor-areas">
               <AreaPill areas={areas} selectedId={v.areaId} onSelect={(a) => setV({ ...v, areaId: a.id, subAreaId: null })} />
               {area && (
                 <SubAreaChips

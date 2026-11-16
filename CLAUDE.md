@@ -66,10 +66,12 @@ on launch/resume and shows an "App updated" toast.
   opens "Stopped earlier?" (quick times + 🗑 as choices; the tall main button applies
   the selection, so discarding takes two deliberate taps);
   releasing early cancels (never stops).
-- Undo: timer actions (start, area/sub-area change, stop, rewind, discard) push onto an
-  in-memory stack (`src/undo.ts`); the ↶ top-right on Timer undoes the latest. Each undo
-  verifies nothing changed underneath and refuses otherwise. No success toasts on Timer
-  (only "Can't undo").
+- Undo: one step only. The latest timer action (start, area/sub-area change, stop,
+  rewind, discard, notification Stop) is recorded via `recordTimerAction` in
+  `src/undo.ts` as before/after snapshots of the running timer + intervals ending
+  after it; ↶ restores "before", then the same button (↷) restores "after", back and
+  forth. Each switch verifies the region still matches and refuses otherwise. No
+  success toasts on Timer (only "Can't undo").
 
 ## Testing
 - Test thoroughly before reporting; measure rather than eyeball (contrast, frame

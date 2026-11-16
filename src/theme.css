@@ -655,3 +655,8 @@ ion-tabs .ion-page:not(.ion-page-hidden) {
 .sheet-apply ion-icon[slot='start'] { margin-inline-start: 0; } /* Ionic's negative start margin pushes the group left */
 .discard-chip ion-icon { margin: 0 2px; font-size: 18px; }
 .sheet-dimmed { opacity: 0.35; transition: opacity 150ms; }
+
+/* Interval editor (edit + new): breathing room between the area selector and "Time". */
+.editor-areas {
+  padding-bottom: 20px;
+}

@@ -14,7 +14,7 @@ const S = lib.OUT;
   await p.waitForTimeout(500);
   await p.screenshot({ path: S + '/1-idle.png' });
   const btn = n => p.locator(`.area-pill-btn[aria-label="${n}"]`);
-  await btn('Work').click();
+  await btn('Work').click(); await p.waitForTimeout(300);
   await p.clock.fastForward(20000);
   await btn('Guitar').click(); // < 1 min: relabel
   await p.clock.fastForward(30000);
@@ -26,7 +26,7 @@ const S = lib.OUT;
   await p.screenshot({ path: S + '/2-tracking.png' });
   await p.locator('.sub-chips ion-chip', { hasText: 'Songs' }).click(); // >1min -> split
   await p.clock.fastForward(40 * 60000);
-  await btn('Reading').click();
+  await btn('Reading').click(); await p.waitForTimeout(300);
   await p.clock.fastForward(15 * 60000);
   await p.waitForTimeout(300);
   const counts = await p.evaluate(() => new Promise(r => { const q = indexedDB.open('timetracker'); q.onsuccess = () => { const t = q.result.transaction(['intervals','active']); const a = t.objectStore('intervals').getAll(); a.onsuccess = () => { const c = t.objectStore('active').getAll(); c.onsuccess = () => r({ intervals: a.result.map(i => [i.start.slice(11,19), i.end.slice(11,19), i.subAreaId?.slice(0,4)]), active: c.result }); }; }; }));

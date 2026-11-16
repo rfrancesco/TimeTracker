@@ -75,69 +75,14 @@ export async function stopAt(endMs = Date.now()): Promise<StopResult | null> {
 
 export const stop = () => stopAt(Date.now());
 
-// ---- Undo -------------------------------------------------------------------
-// Each undo first checks that nothing changed underneath (the running timer is
-// exactly what the action left, and resuming would not overlap saved time); if
-// anything differs it refuses (returns false) instead of breaking the invariant.
+// (Undo/redo of timer actions: src/undo.ts, snapshot-based.)
 
-const sameTimer = (a: ActiveTimer | null | undefined, b: ActiveTimer | null | undefined) =>
-  !!a && !!b && a.areaId === b.areaId && a.subAreaId === b.subAreaId && a.start === b.start;
-
-/** True if no saved interval ends after `startIso` (so a timer may resume from there). */
-async function freeFrom(startIso: string) {
-  return (await db.intervals.where('end').above(startIso).count()) === 0;
-}
-
-/** Undo a stop/rewind: remove the saved interval and resume the same timer. */
-export async function undoStop(r: StopResult): Promise<boolean> {
-  return db.transaction('rw', [db.active, db.intervals], async () => {
-    if (await getActive()) return false; // another timer was started in the meantime
-    if (r.saved) {
-      const still = await db.intervals.get(r.saved.id);
-      if (!still || still.start !== r.saved.start || still.end !== r.saved.end) return false; // edited since
-      await db.intervals.delete(r.saved.id);
-    }
-    if (!(await freeFrom(r.previous.start))) return false;
-    await db.active.put(r.previous);
-    return true;
-  });
-}
-
-/** Undo a start / area change. */
-export async function undoTrack(r: TrackResult): Promise<boolean> {
-  return db.transaction('rw', [db.active, db.intervals], async () => {
-    if (!sameTimer(await getActive(), r.after)) return false;
-    if (r.kind === 'start') {
-      await db.active.delete('current');
-      return true;
-    }
-    if (r.kind === 'split' && r.saved) {
-      const still = await db.intervals.get(r.saved.id);
-      if (!still || still.start !== r.saved.start || still.end !== r.saved.end) return false;
-      await db.intervals.delete(r.saved.id);
-    }
-    if (r.before && !(await freeFrom(r.before.start))) return false;
-    await db.active.put(r.before!);
-    return true;
-  });
-}
-
-/** Throw the running timer away without saving anything. Returns it, for undo. */
+/** Throw the running timer away without saving anything. Returns it. */
 export async function discardActive(): Promise<ActiveTimer | null> {
   return db.transaction('rw', [db.active], async () => {
     const a = (await getActive()) ?? null;
     if (a) await db.active.delete('current');
     return a;
-  });
-}
-
-/** Undo a discard: bring the timer back if nothing has started since. */
-export async function undoDiscard(previous: ActiveTimer): Promise<boolean> {
-  return db.transaction('rw', [db.active, db.intervals], async () => {
-    if (await getActive()) return false;
-    if (!(await freeFrom(previous.start))) return false;
-    await db.active.put(previous);
-    return true;
   });
 }
 

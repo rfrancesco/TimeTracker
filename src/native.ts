@@ -2,8 +2,8 @@ import { useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Capacitor, registerPlugin, type PluginListenerHandle } from '@capacitor/core';
 import { db } from './db';
-import { stopAt, undoStop } from './timer';
-import { pushUndo } from './undo';
+import { stopAt } from './timer';
+import { recordTimerAction } from './undo';
 import { iconFor } from './icons';
 import { onColor } from './color';
 
@@ -91,11 +91,9 @@ function applyPendingStop(): Promise<boolean> {
     if (p.start == null || p.end == null) return false;
     const active = await db.active.get('current');
     if (!active || Date.parse(active.start) !== p.start) return false; // already stopped/changed in the app
-    const result = await stopAt(p.end);
-    if (!result) return false;
-    const name = (await db.areas.get(result.previous.areaId))?.name ?? 'timer';
-    pushUndo({ label: `stop ${name}`, run: () => undoStop(result) });
-    return true;
+    const name = (await db.areas.get(active.areaId))?.name ?? 'timer';
+    // Like a stop in the app: ↶ on the Timer page can undo it.
+    return !!(await recordTimerAction(`stop ${name}`, () => stopAt(p.end)));
   });
   return applying;
 }

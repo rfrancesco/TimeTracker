@@ -10,7 +10,7 @@ const { chromium, devices } = require('playwright');
   const toastMsg = () => p.evaluate(() => [...document.querySelectorAll('ion-toast')].map(t => t.message).pop() || '(none)');
   const clickUndo = () => p.locator('.undo-button').click();
   // ---- tap Stop + undo
-  await p.locator('.area-pill-btn[aria-label="Guitar"]').click(); await p.clock.fastForward(40 * 60000); await p.waitForTimeout(300);
+  await p.locator('.area-pill-btn[aria-label="Guitar"]').click(); await p.waitForSelector('.stop-button'); await p.waitForTimeout(300); await p.clock.fastForward(40 * 60000); await p.waitForTimeout(300);
   await p.locator('.stop-button').click(); await p.waitForTimeout(600);
   { const d = await db(); lib.report('tap Stop saves the interval and offers Undo', d.includes('18:00–18:40') && d.includes('running: none') && await p.locator('.undo-button').evaluate(e => e.classList.contains('show')), d); }
   await clickUndo(); await p.waitForTimeout(500);

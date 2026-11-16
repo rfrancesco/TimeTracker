@@ -3,15 +3,15 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import {
   IonButton, IonContent, IonIcon, IonPage,
 } from '@ionic/react';
-import { arrowUndo, playBack, stop as stopIcon } from 'ionicons/icons';
+import { arrowRedo, arrowUndo, playBack, stop as stopIcon } from 'ionicons/icons';
 import AreaPill from '../components/AreaPill';
 import SubAreaChips from '../components/SubAreaChips';
 import { db } from '../db';
 import { useActive, useAreas, useDarkMode, useNow, useSubAreas, useToast } from '../hooks';
 import StopEarlierSheet from '../components/StopEarlierSheet';
 import { BACKGROUND_TINT, themeBackground, tintOverBackground } from '../color';
-import { discardActive, formatDuration, stopAt, track, undoDiscard, undoStop, undoTrack } from '../timer';
-import { pushUndo, undoLast, useUndoCount, type UndoEntry } from '../undo';
+import { discardActive, formatDuration, stopAt, track } from '../timer';
+import { recordTimerAction, toggleUndo, useUndoState } from '../undo';
 import { iconFor } from '../icons';
 import { startOfLocalDay } from '../time';
 
@@ -37,36 +37,26 @@ export default function TimerPage() {
   const pressTimer = useRef<number | undefined>(undefined);
   const longPressed = useRef(false);
 
-  // ---- Undo: every timer action pushes an entry; the ↶ button undoes the latest ----
-  const undoCount = useUndoCount();
+  // ---- Undo: ↶ undoes the latest timer action; tapped again (↷) it redoes it ----
+  const undoState = useUndoState();
   const nameOf = (id: string) => allAreas.find((a) => a.id === id)?.name ?? 'Timer';
 
   async function doTrack(areaId: string, subAreaId: string | null) {
-    const r = await track(areaId, subAreaId);
-    if (!r) return;
-    const label = r.kind === 'start' ? `start ${nameOf(areaId)}` : `switch to ${nameOf(areaId)}`;
-    pushUndo({ label, run: () => undoTrack(r) });
+    await recordTimerAction(`${active ? 'switch to' : 'start'} ${nameOf(areaId)}`, () => track(areaId, subAreaId));
   }
 
   async function doStop(endMs?: number) {
-    const rewind = endMs !== undefined;
-    const result = await stopAt(endMs);
-    if (!result) return;
-    const name = nameOf(result.previous.areaId);
-    const entry: UndoEntry = { label: rewind ? `rewind ${name}` : `stop ${name}`, run: () => undoStop(result) };
-    pushUndo(entry);
+    const name = active ? nameOf(active.areaId) : 'timer';
+    await recordTimerAction(`${endMs !== undefined ? 'rewind' : 'stop'} ${name}`, () => stopAt(endMs));
   }
 
   async function doDiscard() {
-    const previous = await discardActive();
-    if (!previous) return;
-    const name = nameOf(previous.areaId);
-    const entry: UndoEntry = { label: `discard ${name}`, run: () => undoDiscard(previous) };
-    pushUndo(entry);
+    const name = active ? nameOf(active.areaId) : 'timer';
+    await recordTimerAction(`discard ${name}`, () => discardActive());
   }
 
   async function runUndo() {
-    const { ok, label } = await undoLast();
+    const { ok, label } = await toggleUndo();
     // Silent on success (the screen shows the result); speak up only if it was refused.
     if (label && !ok) toast('Can’t undo: things changed since');
   }
@@ -127,18 +117,18 @@ export default function TimerPage() {
     >
       <IonContent>
         <div className="timer-layout">
-          {/* Undo the latest timer action; only there when there is something to undo. */}
+          {/* Undo the latest timer action (then redo it); only there when there is one. */}
           <IonButton
             fill="clear"
-            className={`undo-button${undoCount ? ' show' : ''}`}
-            aria-label="Undo"
-            disabled={!undoCount}
+            className={`undo-button${undoState ? ' show' : ''}`}
+            aria-label={undoState === 'redo' ? 'Redo' : 'Undo'}
+            disabled={!undoState}
             onClick={() => {
               haptic();
               runUndo();
             }}
           >
-            <IonIcon slot="icon-only" icon={arrowUndo} />
+            <IonIcon slot="icon-only" icon={undoState === 'redo' ? arrowRedo : arrowUndo} />
           </IonButton>
           <section className="timer-display" aria-live="polite">
             {active && activeArea ? (

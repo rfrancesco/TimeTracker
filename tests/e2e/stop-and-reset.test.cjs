@@ -12,9 +12,9 @@ const S = lib.OUT;
   console.log('defaults:', JSON.stringify(await count()));
   const btn = n => p.locator(`.area-pill-btn[aria-label="${n}"]`);
   const stop = () => p.locator('.stop-button').click();
-  await btn('Music').click(); await p.clock.fastForward(30000); await stop(); await p.waitForTimeout(200);
+  await btn('Music').click(); await p.waitForTimeout(300); await p.clock.fastForward(30000); await stop(); await p.waitForTimeout(200);
   { const c = await count(); lib.report('stop under a minute discards the timer', c.intervals === 0 && c.active === 0, JSON.stringify(c)); }
-  await btn('Cinema').click(); await p.clock.fastForward(5 * 60000); await stop(); await p.waitForTimeout(200);
+  await btn('Cinema').click(); await p.waitForTimeout(300); await p.clock.fastForward(5 * 60000); await stop(); await p.waitForTimeout(200);
   { const c = await count(); lib.report('stop after 5 min saves an interval', c.intervals === 1 && c.active === 0, JSON.stringify(c)); }
   await btn('Thesis').click(); await p.waitForTimeout(200);
   await p.screenshot({ path: S + '/n1-timer.png' });
