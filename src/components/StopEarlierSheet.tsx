@@ -41,6 +41,7 @@ export default function StopEarlierSheet({ active, area, subName, open, onClose,
   };
 
   const now = Date.now();
+  const nowMin = Math.floor(now / MIN) * MIN;
   const problem = end <= start ? 'That’s before the timer started' : end > now ? 'That’s in the future' : null;
   const tooShort = !problem && end - start < RELABEL_THRESHOLD_MS;
 
@@ -61,6 +62,10 @@ export default function StopEarlierSheet({ active, area, subName, open, onClose,
             </div>
 
             <div className="sheet-quick">
+              {/* "Now" is always available, so there is always a way back from 🗑. */}
+              <IonChip outline={discard || end !== nowMin} onClick={() => pickTime(nowMin)}>
+                <IonLabel>Now</IonLabel>
+              </IonChip>
               {QUICK.map((m) => {
                 const t = Math.floor((now - m * MIN) / MIN) * MIN;
                 return (
@@ -74,7 +79,8 @@ export default function StopEarlierSheet({ active, area, subName, open, onClose,
               </IonChip>
             </div>
 
-            <div className={discard ? 'sheet-dimmed' : undefined}>
+            {/* Dimmed while 🗑 is selected, but still tappable: touching it goes back to stopping. */}
+            <div className={discard ? 'sheet-dimmed' : undefined} onClickCapture={() => setDiscard(false)}>
               <DateTimeField label="Ended" value={end} onChange={(ms) => pickTime(ms)} />
             </div>
 

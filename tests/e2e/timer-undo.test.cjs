@@ -49,6 +49,15 @@ const { chromium, devices } = require('playwright');
   const applyAfter = await p.locator('ion-modal.stop-sheet .sheet-apply').innerText();
   lib.report('choosing 🗑 morphs the main button into DISCARD (nothing happens yet)', /^stop at/i.test(applyBefore) && /^discard$/i.test(applyAfter) && (await db()).includes('▶ Guitar'), `${applyBefore} → ${applyAfter}`);
   await p.screenshot({ path: `${lib.OUT}/rewind-sheet-discard.png` });
+  // there is always a way back from 🗑: the Now chip, or touching the time field
+  await p.locator('ion-modal.stop-sheet ion-chip', { hasText: /^Now$/ }).click(); await p.waitForTimeout(250);
+  const backByNow = await p.locator('ion-modal.stop-sheet .sheet-apply').innerText();
+  await p.locator('ion-modal.stop-sheet .discard-chip').click(); await p.waitForTimeout(250);
+  // (tap the dimmed field's container: a real tap would also open the system picker)
+  await p.locator('ion-modal.stop-sheet .sheet-dimmed').evaluate(el => el.click()); await p.waitForTimeout(250);
+  const backByField = await p.locator('ion-modal.stop-sheet .sheet-apply').innerText();
+  lib.report('from 🗑 you can go back to stopping (Now chip, or the time field)', /^stop at/i.test(backByNow) && /^stop at/i.test(backByField), `${backByNow} | ${backByField}`);
+  await p.locator('ion-modal.stop-sheet .discard-chip').click(); await p.waitForTimeout(250);
   await p.locator('ion-modal.stop-sheet .sheet-apply').click(); await p.waitForTimeout(700);
   lib.report('discard throws the running interval away', (await db()) === '[] idle', await db());
   await undo();

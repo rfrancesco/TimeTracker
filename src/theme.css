@@ -650,4 +650,4 @@ ion-tabs .ion-page:not(.ion-page-hidden) {
 .sheet-apply { height: 60px; margin-top: 4px; } /* height (not min-height) so Ionic's inner button grows and centres the label */
 .sheet-apply ion-icon[slot='start'] { margin-inline-start: 0; } /* Ionic's negative start margin pushes the group left */
 .discard-chip ion-icon { margin: 0 2px; font-size: 18px; }
-.sheet-dimmed { opacity: 0.35; pointer-events: none; transition: opacity 150ms; }
+.sheet-dimmed { opacity: 0.35; transition: opacity 150ms; }
