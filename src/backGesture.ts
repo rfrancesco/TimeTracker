@@ -6,8 +6,8 @@
  * (modal, alert, action sheet, popover) pushes an invisible history entry when it
  * opens; "back" then pops that entry, and we close the top dialog instead. When a
  * dialog is closed any other way, its entry is removed again so history stays
- * clean. (Inside a native wrapper Ionic gets the real back button and does this
- * itself; this covers the web.)
+ * clean. The Android wrapper's back button calls WebView goBack(), which pops the
+ * same entries, so this covers the wrapper too.
  */
 
 const OVERLAYS = ['Modal', 'Alert', 'ActionSheet', 'Popover'];

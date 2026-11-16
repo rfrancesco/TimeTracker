@@ -13,6 +13,7 @@ import { iconFor } from '../icons';
 import { localDateKey } from '../time';
 import { BackupError, parseBackup } from '../backup';
 import { getThemePref, setThemePref, type ThemePref } from '../theme';
+import { native } from '../native';
 
 export default function SettingsPage() {
   const areas = useAreas();
@@ -38,6 +39,15 @@ export default function SettingsPage() {
     const data = await exportAll();
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const name = `timetracker-${localDateKey(Date.now())}.json`;
+    // Android wrapper: its WebView can't download or use the Web Share API.
+    if (native) {
+      try {
+        await native.shareFile({ name, text: await blob.text() });
+        return;
+      } catch {
+        /* older wrapper: fall through */
+      }
+    }
     const file = new File([blob], name, { type: 'application/json' });
     // Android share sheet if available (save to Drive, etc.), otherwise download.
     if (navigator.canShare?.({ files: [file] })) {

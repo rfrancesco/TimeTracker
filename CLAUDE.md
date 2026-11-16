@@ -88,10 +88,13 @@ on launch/resume and shows an "App updated" toast.
   the device; consistency over taxonomy perfection ("main activity wins").
 
 ## Plans and open questions
-- **Planned, not built: Capacitor wrapper with the status-bar chip only.** Separate
-  repo; loads the web app; one small plugin posting a promoted ongoing notification
-  (Android 16+ Live Update chip, system chronometer, no Stop button, no foreground
-  service).
+- **Android wrapper: rfrancesco/TimeTracker-android** (Capacitor; loads this app
+  from Pages; CI builds the APK). Promoted ongoing notification (Live Update chip,
+  system chronometer) with a Stop that needs the device unlocked; no foreground
+  service. Bridge: `src/native.ts` (no-op in browsers): mirrors the running timer,
+  applies a notification Stop via `stopAt` + undo, exports through the native share
+  sheet. Only add plugin methods, never change them (older APKs must keep working).
+  Later idea: bundle the web app (submodule) and drop INTERNET.
 - **Still being thought about, not decided: area taxonomy.** Areas currently mix
   activity, place and company; possible named groups (Necessities / At home / Out)
   with group totals in reports. Until decided, use "main activity wins" as the

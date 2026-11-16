@@ -14,6 +14,7 @@ import { TAB_BAR_ID, setThemeColor, useActive, useAreas, useDarkMode, useNow, us
 import { BACKGROUND_TINT, themeBackground, tintOverBackground } from './color';
 import { formatHex, parse } from 'culori';
 import { formatDuration } from './timer';
+import { NativeTimerSync } from './native';
 
 import '@ionic/react/css/core.css';
 import '@ionic/react/css/normalize.css';
@@ -251,6 +252,7 @@ export default function App() {
           </IonTabBar>
         </IonTabs>
         <UpdateNotice />
+        <NativeTimerSync />
         <StatusBarSync areaColor={areaColor} dark={dark} />
       </IonReactRouter>
     </IonApp>
