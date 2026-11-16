@@ -564,12 +564,14 @@ ion-tab-bar.tracking {
 }
 ion-tab-bar.tracking ion-tab-button[tab="timer"] ion-label { font-variant-numeric: tabular-nums; font-weight: 600; }
 
-/* Smoother tab switches: Material-style fade-through on the incoming page.
+/* Smoother tab switches: a short fade on the incoming page.
    Ionic shows/hides tab pages with .ion-page-hidden, so the animation runs
    each time a page becomes visible. */
+/* Opacity only: a scale would pull the page's edges in during the animation and
+   open a gap between the status bar and the header. */
 @keyframes page-fade-through {
-  from { opacity: 0; transform: scale(0.985); }
-  to { opacity: 1; transform: none; }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 ion-tabs .ion-page:not(.ion-page-hidden) {
   /* keep in sync with PAGE_FADE in App.tsx (the status bar fades with the page) */
