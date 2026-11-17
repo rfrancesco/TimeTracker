@@ -26,19 +26,20 @@ const FAKE_NATIVE = () => {
         return Promise.resolve(getPending() || {});
       }
       if (method === 'clearPendingStop') { if (getPending()?.start === opts.start) setPending(null); return Promise.resolve(); }
-      if (method === 'status') return Promise.resolve({ sdk: 37, permission: 'granted', notificationsEnabled: true, liveUpdatesAllowed: false, promotable: true, posted: true, promoted: false });
+      if (method === 'status') return Promise.resolve({ sdk: 37, permission: 'granted', notificationsEnabled: true, liveUpdatesAllowed: !!window.__liveAllowed, promotable: true, posted: true, promoted: false });
       return Promise.resolve(method === 'showTimer' ? { shown: true } : undefined);
     },
-    nativeCallback(_plugin, method, _opts, cb) {
-      if (method === 'addListener') state.listeners.push(cb);
+    nativeCallback(_plugin, method, opts, cb) {
+      if (method === 'addListener') state.listeners.push({ event: opts?.eventName, cb });
       return 'cb' + state.listeners.length;
     },
   };
   window.__pending = getPending;
   window.__notificationStop = (start, end) => {
     setPending({ start, end });
-    state.listeners.forEach((cb) => cb({}));
+    state.listeners.filter((l) => l.event === 'stop').forEach((l) => l.cb({}));
   };
+  window.__openTimer = () => state.listeners.filter((l) => l.event === 'openTimer').forEach((l) => l.cb({}));
 };
 
 (async () => {
@@ -154,11 +155,60 @@ const FAKE_NATIVE = () => {
 
   // Settings → Android app: diagnostics from the native side.
   const section = p.locator('ion-list', { has: p.locator('ion-list-header', { hasText: 'Android app' }) });
-  const rows = (await section.locator('ion-item').allInnerTexts()).map((t) => t.replace(/\s+/g, ' ').trim());
-  lib.report('Settings shows the Android app status', rows.includes('Notifications Allowed') && rows.includes('Live updates Off') && rows.includes('Timer notification Showing · not promoted'), JSON.stringify(rows));
-  await section.locator('ion-item', { hasText: 'Live updates' }).click(); await p.waitForTimeout(300);
-  lib.report('tapping it opens the system notification settings', (await calls()).some(([m]) => m === 'openNotificationSettings'));
+  const rows = async () => (await section.locator('ion-item').allInnerTexts()).map((t) => t.replace(/\s+/g, ' ').trim());
+  const r0 = await rows();
+  lib.report('Settings shows the Android app status', r0.includes('Notifications Allowed') && r0.includes('Live updates Off in Android') && r0.includes('Timer notification Showing · not promoted'), JSON.stringify(r0));
+  await section.locator('ion-item', { hasText: /^Notifications/ }).click(); await p.waitForTimeout(300);
+  lib.report('“Notifications” opens the system notification settings', (await calls()).some(([m]) => m === 'openNotificationSettings'));
   await p.screenshot({ path: `${lib.OUT}/native-settings.png` });
+
+  // Live updates: dialog with a global switch and one per area.
+  const dlg = 'ion-modal.live-updates-dialog';
+  const openDialog = async () => { await section.locator('ion-item', { hasText: /^Live updates/ }).click(); await p.waitForSelector(`${dlg} ion-title`); await p.waitForTimeout(400); };
+  const closeDialog = async () => { await p.locator(dlg).getByRole('button', { name: 'Close' }).click(); await p.waitForSelector(`${dlg} ion-title`, { state: 'detached' }); await p.waitForTimeout(300); };
+  const toggle = (name) => p.locator(`${dlg} ion-toggle[aria-label="${name}"]`);
+  await openDialog();
+  const areaToggles = await p.locator(`${dlg} .live-area ion-toggle`).evaluateAll((es) => es.map((e) => `${e.getAttribute('aria-label')}:${e.checked ? 'on' : 'off'}`));
+  lib.report('the dialog lists every area, all with live updates by default', areaToggles.length === 12 && areaToggles.every((t) => t.endsWith(':on')) && areaToggles[0].startsWith('Sleep'), areaToggles.join(' '));
+  lib.report('…and says when Android itself has live updates off (with a link)', (await p.locator(`${dlg} ion-item`, { hasText: 'Off in Android settings' }).count()) === 1);
+  await toggle('Sleep').click(); await p.waitForTimeout(400);
+  const sleepFlag = await p.evaluate(() => new Promise((r) => { const q = indexedDB.open('timetracker'); q.onsuccess = () => { q.result.transaction('areas').objectStore('areas').getAll().onsuccess = (e) => r(e.target.result.find((a) => a.name === 'Sleep').liveUpdates); }; }));
+  lib.report('switching Sleep off is saved on the area (so it travels with backups)', sleepFlag === false, String(sleepFlag));
+  await p.screenshot({ path: `${lib.OUT}/native-live-dialog.png` });
+  await closeDialog();
+  // With Android allowing live updates, the row sums up the per-area choice.
+  await p.evaluate(() => { window.__liveAllowed = true; });
+  await p.locator('ion-tab-button[tab="timer"]').click(); await p.waitForTimeout(300);
+  await p.locator('ion-tab-button[tab="settings"]').click(); await p.waitForTimeout(500);
+  lib.report('the Settings row sums up the choice: “11 of 12 areas”', (await rows()).includes('Live updates 11 of 12 areas'), JSON.stringify(await rows()));
+
+  // Sleep → quiet notification (promote: false); Reading → live update.
+  const lastShow = async () => (await calls()).filter(([m]) => m === 'showTimer').at(-1)?.[1];
+  await p.locator('ion-tab-button[tab="timer"]').click(); await p.waitForTimeout(400);
+  await tap('Sleep'); await p.waitForTimeout(300);
+  const sleepShow = await lastShow();
+  lib.report('Sleep without live updates → quiet notification (promote: false)', sleepShow?.title === 'Sleep' && sleepShow.promote === false, j(sleepShow));
+  await tap('Reading'); await p.waitForTimeout(300);
+  const readShow = await lastShow();
+  lib.report('Reading → live update (promote: true)', readShow?.title === 'Reading' && readShow.promote === true, j(readShow));
+
+  // Global switch off → quiet for every area.
+  await p.locator('ion-tab-button[tab="settings"]').click(); await p.waitForTimeout(400);
+  await openDialog();
+  await toggle('Live updates').click(); await p.waitForTimeout(400);
+  const disabled = await p.locator(`${dlg} .live-area`).evaluateAll((es) => es.every((e) => e.disabled));
+  lib.report('global switch off greys out the areas', disabled);
+  const offShow = await lastShow();
+  lib.report('…and the running timer becomes quiet', offShow?.title === 'Reading' && offShow.promote === false, j(offShow));
+  await toggle('Live updates').click(); await p.waitForTimeout(400);
+  lib.report('back on → live update again, Sleep still off', (await lastShow()).promote === true && !(await toggle('Sleep').evaluate((e) => e.checked)));
+  await closeDialog();
+
+  // Tapping the notification (app already open) switches to the Timer tab.
+  await p.evaluate(() => window.__openTimer()); await p.waitForTimeout(600);
+  lib.report('tapping the notification opens the Timer tab', /\/timer$/.test(new URL(p.url()).pathname), p.url());
+  await p.locator('.stop-button').click(); await p.waitForTimeout(500);
+  await p.locator('ion-tab-button[tab="settings"]').click(); await p.waitForTimeout(400);
 
   // An older APK (no peek/clear) still gets its stops applied, via takePendingStop.
   const oldCtx = await b.newContext({ ...devices['Pixel 7'], timezoneId: 'Europe/Rome' });

@@ -122,6 +122,7 @@ fs.mkdirSync(`${lib.OUT}/bk`, { recursive: true });
     'file from another app': JSON.stringify({ ...exported, app: 'someotherapp' }),
     'backup from a newer app version': JSON.stringify({ ...exported, format: 99 }),
     'area with broken colour': JSON.stringify({ ...exported, areas: exported.areas.map((a, i) => i ? a : { ...a, color: 'blue' }) }),
+    'area with a broken live updates setting': JSON.stringify({ ...exported, areas: exported.areas.map((a, i) => i ? a : { ...a, liveUpdates: 'no' }) }),
   };
   for (const [label, content] of Object.entries(bad)) {
     const f = `${S}/bk/bad-${label.replace(/\W+/g, '-')}.json`; fs.writeFileSync(f, content);

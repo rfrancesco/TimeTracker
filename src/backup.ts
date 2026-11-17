@@ -69,6 +69,9 @@ export function parseBackup(text: string): Backup {
     if (!isStr(a.name) || !isStr(a.icon) || !isColor(a.color) || typeof a.order !== 'number') {
       throw new BackupError(`Area “${String(a.name ?? a.id)}” is incomplete (name, icon, colour or order).`);
     }
+    if (a.liveUpdates !== undefined && typeof a.liveUpdates !== 'boolean') {
+      throw new BackupError(`Area “${String(a.name)}” has an invalid live updates setting.`);
+    }
   }
   for (const s of subAreas as Record<string, unknown>[]) {
     if (!isStr(s.name) || typeof s.order !== 'number') throw new BackupError(`Sub-area “${String(s.id)}” is incomplete.`);

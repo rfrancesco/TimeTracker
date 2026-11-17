@@ -670,3 +670,9 @@ ion-tabs .ion-page:not(.ion-page-hidden) {
 .area-pill-btn { -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; }
 .stop-button.area-hold { opacity: 1; }
 .stop-button.area-hold::part(native) { opacity: 1; }
+
+/* Settings → Android app → Live updates */
+.live-area .dot { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-size: 16px; }
+.live-row-gap { height: 10px; }
+.live-note { display: block; padding: 8px 16px 24px; font-size: 13px; line-height: 1.4; }
+.live-updates-dialog ion-toggle::part(label) { white-space: normal; }

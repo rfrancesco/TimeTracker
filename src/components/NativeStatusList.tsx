@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
 import { IonItem, IonLabel, IonList, IonListHeader, IonNote, useIonViewWillEnter } from '@ionic/react';
 import { inWrapper, lastBridgeError, native, type NativeStatus } from '../native';
+import { useActive, useAreas } from '../hooks';
+import { areaWantsLiveUpdates, useLiveUpdatesEnabled } from '../liveUpdates';
+import LiveUpdatesDialog from './LiveUpdatesDialog';
 
 /**
  * Settings → Android app (only inside the wrapper): what the system allows and
@@ -9,6 +12,13 @@ import { inWrapper, lastBridgeError, native, type NativeStatus } from '../native
 export default function NativeStatusList() {
   const [s, setS] = useState<NativeStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [dialog, setDialog] = useState(false);
+  const areas = useAreas();
+  const active = useActive();
+  const enabled = useLiveUpdatesEnabled();
+  const withLive = areas.filter(areaWantsLiveUpdates).length;
+  const activeArea = areas.find((a) => a.id === active?.areaId);
+  const quietNow = !enabled || (activeArea && !areaWantsLiveUpdates(activeArea));
 
   const load = () =>
     native?.status().then(
@@ -30,14 +40,15 @@ export default function NativeStatusList() {
 
   if (!inWrapper) return null;
   const openSettings = () => void native?.openNotificationSettings().catch(() => {});
-  const yesNo = (v: boolean | undefined, yes: string, no: string) => (v === undefined ? 'Not on this Android' : v ? yes : no);
   const timer = !s
     ? ''
     : !s.posted
       ? 'Not showing'
       : s.promoted
-        ? 'Showing · Live Update'
-        : s.promotable === false
+        ? 'Showing · live update'
+        : quietNow
+          ? 'Showing · quiet'
+          : s.promotable === false
           ? 'Showing · doesn’t qualify as a Live Update'
           : 'Showing · not promoted';
   const problem = error ?? s?.lastError ?? lastBridgeError;
@@ -58,9 +69,19 @@ export default function NativeStatusList() {
               <IonLabel>Notifications</IonLabel>
               <IonNote slot="end">{s.notificationsEnabled ? 'Allowed' : 'Off'}</IonNote>
             </IonItem>
-            <IonItem button detail onClick={openSettings}>
+            <IonItem button detail onClick={() => setDialog(true)}>
               <IonLabel>Live updates</IonLabel>
-              <IonNote slot="end">{yesNo(s.liveUpdatesAllowed, 'Allowed', 'Off')}</IonNote>
+              <IonNote slot="end">
+                {s.liveUpdatesAllowed === undefined
+                  ? 'Not on this Android'
+                  : !s.liveUpdatesAllowed
+                    ? 'Off in Android'
+                    : !enabled
+                      ? 'Off'
+                      : withLive === areas.length
+                        ? 'All areas'
+                        : `${withLive} of ${areas.length} areas`}
+              </IonNote>
             </IonItem>
             <IonItem>
               <IonLabel>Timer notification</IonLabel>
@@ -76,6 +97,12 @@ export default function NativeStatusList() {
           </IonLabel>
         </IonItem>
       )}
+      <LiveUpdatesDialog
+        open={dialog}
+        onClose={() => setDialog(false)}
+        systemAllowed={s?.liveUpdatesAllowed}
+        onOpenSystemSettings={openSettings}
+      />
     </IonList>
   );
 }

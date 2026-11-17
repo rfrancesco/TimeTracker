@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Capacitor, registerPlugin, type PluginListenerHandle } from '@capacitor/core';
 import { db } from './db';
@@ -6,6 +6,8 @@ import { stopAt } from './timer';
 import { recordTimerAction } from './undo';
 import { iconFor } from './icons';
 import { onColor } from './color';
+import { areaWantsLiveUpdates, useLiveUpdatesEnabled } from './liveUpdates';
+import { useNavigate } from 'react-router-dom';
 
 /** The area's icon as a white-on-transparent PNG (base64), for the notification and chip. */
 const glyphs = new Map<string, Promise<string | undefined>>();
@@ -45,6 +47,7 @@ interface TimeTrackerPlugin {
     color?: string;
     onColor?: string;
     icon?: string; // base64 PNG, white glyph on transparent (older wrappers ignore it)
+    promote?: boolean; // false: quiet notification, no live update/ticking time (older wrappers ignore it)
   }): Promise<{ shown: boolean }>;
   hideTimer(): Promise<void>;
   takePendingStop(): Promise<{ start?: number; end?: number }>; // old APKs: read + forget in one step
@@ -53,7 +56,7 @@ interface TimeTrackerPlugin {
   shareFile(o: { name: string; text: string; mimeType?: string }): Promise<void>;
   status(): Promise<NativeStatus>;
   openNotificationSettings(): Promise<void>;
-  addListener(event: 'stop', fn: () => void): Promise<PluginListenerHandle>;
+  addListener(event: 'stop' | 'openTimer', fn: () => void): Promise<PluginListenerHandle>;
 }
 
 export interface NativeStatus {
@@ -133,18 +136,20 @@ export function NativeTimerSync() {
       color: area?.color,
       onColor: area ? onColor(area.color) : undefined,
       iconKey: area?.icon,
+      wantsLive: areaWantsLiveUpdates(area),
     };
   });
-  const key = state === undefined ? undefined : JSON.stringify(state);
+  const liveOn = useLiveUpdatesEnabled();
+  const key = state === undefined ? undefined : JSON.stringify(state && { ...state, wantsLive: undefined, promote: liveOn && state.wantsLive });
 
   useEffect(() => {
     if (!native || key === undefined) return;
     const sync = async () => {
       // Just stopped: the live query re-runs with the new state and syncs then.
       if (await applyPendingStop()) return;
-      const s = key && (JSON.parse(key) as NonNullable<typeof state>);
+      const s = key && (JSON.parse(key) as NonNullable<typeof state> & { promote: boolean });
       if (!s) return void quietly(native!.hideTimer());
-      const { iconKey, ...rest } = s;
+      const { iconKey, wantsLive: _w, ...rest } = s;
       quietly(native!.showTimer({ ...rest, icon: iconKey ? await glyphPng(iconKey) : undefined }));
     };
     sync();
@@ -159,6 +164,16 @@ export function NativeTimerSync() {
     if (!native) return;
     const handle = native.addListener('stop', () => void applyPendingStop());
     return () => void handle.then((h) => h.remove());
+  }, []);
+
+  // Tapping the notification opens the Timer tab.
+  const navigate = useNavigate();
+  const navigateRef = useRef(navigate);
+  navigateRef.current = navigate; // registered once; always uses the current router
+  useEffect(() => {
+    if (!native) return;
+    const handle = native.addListener('openTimer', () => navigateRef.current('/timer'));
+    return () => void handle.then((h) => h.remove()).catch(() => {});
   }, []);
 
   return null;
