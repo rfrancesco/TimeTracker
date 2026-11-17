@@ -64,21 +64,28 @@ const { chromium, devices } = require('playwright');
   lib.report('undo a discard → timer back', (await db()) === '[] ▶ Guitar since 18:00', await db());
   await p.screenshot({ path: `${lib.OUT}/timer-undo-button.png` });
 
-  // Only the latest action: ↶ undoes it, the same button (↷) redoes it, back and forth.
-  const label = () => p.locator('.undo-button').evaluate(e => e.ariaLabel || e.getAttribute('aria-label'));
+  // A stack: ↶ walks back step by step, ↷ forward again; a new action clears redo.
+  const redoShown = () => p.locator('.redo-button').evaluate(e => e.classList.contains('show'));
+  const redo = async () => { await p.locator('.redo-button').click(); await p.waitForTimeout(500); };
+  const undoBox = async () => { const r = await p.locator('.undo-button').boundingBox(); return `${Math.round(r.x)},${Math.round(r.y)}`; };
   await ff(5); await tap('Thesis'); await ff(5); await p.locator('.stop-button').click(); await p.waitForTimeout(600);
   const two = await db();
+  lib.report('no ↷ before anything was undone', !(await redoShown()));
+  const posBefore = await undoBox();
+  await undo(); const back1 = await db();
+  await undo(); const back2 = await db();
+  lib.report('two undos walk back two steps', two === '[Guitar 18:00–18:25, Thesis 18:25–18:30] idle' && back1 === '[Guitar 18:00–18:25] ▶ Thesis since 18:25' && back2 === '[] ▶ Guitar since 18:00', `${two} → ${back1} → ${back2}`);
+  lib.report('↷ appears, and ↶ stays exactly where it was', (await redoShown()) && (await undoBox()) === posBefore, `${posBefore} → ${await undoBox()}`);
+  await redo(); const fwd1 = await db();
+  await redo(); const fwd2 = await db();
+  lib.report('two redos walk forward again to the same states', fwd1 === back1 && fwd2 === two && !(await redoShown()), `${fwd1} → ${fwd2}`);
+  await undo(); await undo();
+  await tap('Reading'); // a new action after undoing
+  lib.report('a new action clears ↷', !(await redoShown()) && (await db()) === '[Guitar 18:00–18:30] ▶ Reading since 18:30', await db());
   await undo();
-  const undone = await db(); const l1 = await label();
-  await undo();
-  const redone = await db(); const l2 = await label();
-  await undo();
-  const again = await db();
-  lib.report('↶ undoes the last action, then the button becomes ↷ Redo', two === '[Guitar 18:00–18:25, Thesis 18:25–18:30] idle' && undone === '[Guitar 18:00–18:25] ▶ Thesis since 18:25' && l1 === 'Redo', `${two} → ${undone} (${l1})`);
-  lib.report('↷ redoes it (exactly the state before the undo), then it is ↶ again', redone === two && l2 === 'Undo' && again === undone, `${redone} (${l2}) → ${again}`);
-  lib.report('only one step: undoing never walks back further than the last action', !(await db()).startsWith('[]'), await db());
-  await undo(); // redo the stop
-  lib.report('back to stopped', (await db()) === two, await db());
+  lib.report('…and ↶ still undoes it', (await db()) === '[] ▶ Guitar since 18:00', await db());
+  await p.screenshot({ path: `${lib.OUT}/timer-undo-redo.png` });
+  await p.locator('.stop-button').click(); await p.waitForTimeout(600);
 
   // safety: the saved interval was edited elsewhere (e.g. Day view) → refuse, change nothing
   await tap('Guitar'); await ff(5); await p.locator('.stop-button').click(); await p.waitForTimeout(600);

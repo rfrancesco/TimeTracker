@@ -11,7 +11,7 @@ import { useActive, useAreas, useDarkMode, useNow, useSubAreas, useToast } from 
 import StopEarlierSheet from '../components/StopEarlierSheet';
 import { BACKGROUND_TINT, themeBackground, tintOverBackground } from '../color';
 import { discardActive, formatDuration, stopAt, track } from '../timer';
-import { recordTimerAction, toggleUndo, useUndoState } from '../undo';
+import { recordTimerAction, redo, undo, useUndoRedo } from '../undo';
 import { iconFor } from '../icons';
 import { startOfLocalDay } from '../time';
 
@@ -37,8 +37,8 @@ export default function TimerPage() {
   const pressTimer = useRef<number | undefined>(undefined);
   const longPressed = useRef(false);
 
-  // ---- Undo: ↶ undoes the latest timer action; tapped again (↷) it redoes it ----
-  const undoState = useUndoState();
+  // ---- Undo/redo: ↶ walks back through recent timer actions, ↷ forward again ----
+  const { canUndo, canRedo } = useUndoRedo();
   const nameOf = (id: string) => allAreas.find((a) => a.id === id)?.name ?? 'Timer';
 
   async function doTrack(areaId: string, subAreaId: string | null) {
@@ -55,10 +55,10 @@ export default function TimerPage() {
     await recordTimerAction(`discard ${name}`, () => discardActive());
   }
 
-  async function runUndo() {
-    const { ok, label } = await toggleUndo();
+  async function runHistory(step: typeof undo, word: string) {
+    const { ok, label } = await step();
     // Silent on success (the screen shows the result); speak up only if it was refused.
-    if (label && !ok) toast('Can’t undo: things changed since');
+    if (label && !ok) toast(`Can’t ${word}: things changed since`);
   }
   // A press that lasts past HOLD_SHOW turns the button into REWIND and starts the
   // fill (a tap never gets there); at HOLD_DONE the "Stopped earlier?" sheet opens.
@@ -117,19 +117,34 @@ export default function TimerPage() {
     >
       <IonContent>
         <div className="timer-layout">
-          {/* Undo the latest timer action (then redo it); only there when there is one. */}
-          <IonButton
-            fill="clear"
-            className={`undo-button${undoState ? ' show' : ''}`}
-            aria-label={undoState === 'redo' ? 'Redo' : 'Undo'}
-            disabled={!undoState}
-            onClick={() => {
-              haptic();
-              runUndo();
-            }}
-          >
-            <IonIcon slot="icon-only" icon={undoState === 'redo' ? arrowRedo : arrowUndo} />
-          </IonButton>
+          {/* ↶ ↷ in fixed slots (each fades in only when it has something to do), so a
+              button never moves under the finger. */}
+          <div className="history-buttons">
+            <IonButton
+              fill="clear"
+              className={`undo-button${canUndo ? ' show' : ''}`}
+              aria-label="Undo"
+              disabled={!canUndo}
+              onClick={() => {
+                haptic();
+                runHistory(undo, 'undo');
+              }}
+            >
+              <IonIcon slot="icon-only" icon={arrowUndo} />
+            </IonButton>
+            <IonButton
+              fill="clear"
+              className={`redo-button${canRedo ? ' show' : ''}`}
+              aria-label="Redo"
+              disabled={!canRedo}
+              onClick={() => {
+                haptic();
+                runHistory(redo, 'redo');
+              }}
+            >
+              <IonIcon slot="icon-only" icon={arrowRedo} />
+            </IonButton>
+          </div>
           <section className="timer-display" aria-live="polite">
             {active && activeArea ? (
               <>
