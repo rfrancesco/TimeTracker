@@ -24,8 +24,10 @@ for f in "${suites[@]}"; do
   name=$(basename "$f" .test.cjs)
   echo "── $name"
   for scheme in ${SCHEMES:-dark}; do
+    t0=$(date +%s)
     SCHEME=$scheme timeout 600 node "$f" 2>&1 | sed 's/^/   /'
     rc=${PIPESTATUS[0]}
+    echo "   ($(( $(date +%s) - t0 )) s)"
     [ "$rc" -eq 0 ] || failed+=("$name")
   done
 done

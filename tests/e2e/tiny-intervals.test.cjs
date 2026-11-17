@@ -27,7 +27,9 @@ const T = hm => new Date(`2026-11-15T${hm}:00+01:00`).toISOString();
   await p.screenshot({ path: S + '/tiny-2.png' });
   await p.locator('.day-chip.selected').click(); await p.waitForTimeout(700);
   console.log('editor:', await p.locator('ion-modal ion-title').innerText(), '|', await p.locator('ion-modal ion-input input').evaluateAll(es => es.map(e => e.value).join(' → ')));
-  await p.locator('ion-modal ion-button[aria-label="Close"]').click(); await p.waitForTimeout(500);
+  // (Ionic moves aria-label onto its inner <button>, so find it by role + accessible name)
+  await p.getByRole('button', { name: 'Close' }).filter({ visible: true }).click();
+  await p.waitForSelector('ion-modal ion-title', { state: 'hidden' });
   // zoom in with the pill (anchored), then pinch
   const zoomState = () => p.evaluate(() => ({ h: parseFloat(document.querySelector('.day-view').style.height), chips: document.querySelectorAll('.day-chip').length, blocks: document.querySelectorAll('.day-block').length }));
   await p.locator('.zoom-pill button[aria-label="Zoom in"]').click(); await p.waitForTimeout(300);

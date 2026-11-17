@@ -5,7 +5,6 @@ const S = lib.OUT;
 const URL = lib.BASE;
 const dump = p => p.evaluate(() => new Promise(r => { const q = indexedDB.open('timetracker'); q.onsuccess = () => { const t = q.result.transaction(['areas', 'subAreas', 'intervals', 'active']); const o = {}; let n = 0; for (const s of ['areas', 'subAreas', 'intervals', 'active']) t.objectStore(s).getAll().onsuccess = e => { o[s] = e.target.result.sort((a, b) => String(a.id ?? a.key).localeCompare(String(b.id ?? b.key))); if (++n === 4) r(o); }; }; }));
 const canon = o => JSON.stringify(o);
-const toast = p => p.locator('ion-toast').last().evaluate(t => t.message).catch(() => '(no toast)');
 async function open(ctx) { const p = await ctx.newPage(); p.errs = []; p.on('pageerror', e => p.errs.push(e.message)); await p.clock.install({ time: new Date('2026-11-15T18:00:00+01:00') }); await p.goto(URL); await p.waitForSelector('.area-pill-btn'); return p; }
 async function toSettings(p) { await p.locator('ion-tab-button[tab="settings"]').click(); await p.waitForTimeout(500); }
 async function exportFile(p, path) {
@@ -15,15 +14,31 @@ async function exportFile(p, path) {
 }
 async function importFile(p, path, confirm = true) {
   await toSettings(p);
+  // Record the next toast that gets presented (Ionic reuses toast elements, so watch the
+  // present event rather than looking for a new element).
+  await p.evaluate(() => {
+    window.__toast = null;
+    if (!window.__toastHook) { document.addEventListener('ionToastWillPresent', (e) => { window.__toast = e.target.message; }); window.__toastHook = true; }
+  });
   const [fc] = await Promise.all([p.waitForEvent('filechooser'), p.locator('ion-item', { hasText: 'Restore backup' }).click()]);
-  await fc.setFiles(path); await p.waitForTimeout(600);
-  const header = await p.locator('ion-alert .alert-title').last().innerText().catch(() => null);
-  const alert = header ? await p.locator('ion-alert .alert-message').last().innerText().catch(() => null) : null;
-  if (header === 'Import failed') { await p.locator('ion-alert button', { hasText: 'OK' }).click(); await p.waitForTimeout(400); return { failed: alert }; }
-  if (alert && confirm) { await p.locator('ion-alert button', { hasText: 'Replace' }).click(); await p.waitForTimeout(900); }
-  const after = await p.locator('ion-alert .alert-title').last().innerText().catch(() => null);
-  if (after === 'Import failed') { const m = await p.locator('ion-alert .alert-message').last().innerText(); await p.locator('ion-alert button', { hasText: 'OK' }).click(); return { alert, failed: m }; }
-  return { alert, toast: await toast(p) };
+  await fc.setFiles(path);
+  // Every file leads to a dialog: the confirmation, or "Import failed" for a bad file.
+  await p.waitForSelector('ion-alert .alert-title');
+  const header = await p.locator('ion-alert .alert-title').last().innerText();
+  const alert = await p.locator('ion-alert .alert-message').last().innerText();
+  if (header === 'Import failed') { await p.locator('ion-alert button', { hasText: 'OK' }).click(); await p.waitForSelector('ion-alert', { state: 'detached' }); return { failed: alert }; }
+  if (!confirm) return { alert };
+  await p.locator('ion-alert button', { hasText: 'Replace' }).click();
+  // The outcome: a new toast (success) or an "Import failed" dialog. Large files take a
+  // while under the fake clock, hence the longer wait here.
+  const outcome = await p.waitForFunction(() => {
+    if (window.__toast) return { toast: window.__toast };
+    const f = [...document.querySelectorAll('ion-alert')].find(a => a.querySelector('.alert-title')?.textContent === 'Import failed');
+    if (f) return { failed: f.querySelector('.alert-message')?.textContent ?? '' };
+    return null;
+  }, null, { timeout: 120000 }).then(h => h.jsonValue());
+  if (outcome.failed !== undefined) await p.locator('ion-alert button', { hasText: 'OK' }).click();
+  return { alert, ...outcome };
 }
 const check = lib.report;
 fs.mkdirSync(`${lib.OUT}/bk`, { recursive: true });
@@ -71,7 +86,8 @@ fs.mkdirSync(`${lib.OUT}/bk`, { recursive: true });
   const r1 = await importFile(pb, file);
   check('confirmation names the backup size', !!r1.alert && r1.alert.includes(String(original.intervals.length)), r1.alert);
   const restored = await dump(pb);
-  check('new phone: restored data identical to original', canon(restored) === canon(original), r1.toast);
+  check('new phone: restored data identical to original', canon(restored) === canon(original));
+  check('restore says so', r1.toast === 'Backup restored', r1.toast || r1.failed);
   check('new phone: had different (default) data before', canon(before) !== canon(original));
   await pb.locator('ion-tab-button[tab="timer"]').click(); await pb.waitForTimeout(500);
   check('new phone: running timer resumes', (await pb.locator('.timer-label').innerText().catch(() => '')).includes('Reading'), await pb.locator('.timer-digits').innerText().catch(() => ''));
@@ -84,8 +100,8 @@ fs.mkdirSync(`${lib.OUT}/bk`, { recursive: true });
   await pa.locator('ion-alert button', { hasText: 'Delete' }).click(); await pa.waitForTimeout(800);
   const wiped = await dump(pa);
   check('reset wiped the data', wiped.intervals.length === 0 && wiped.active.length === 0);
-  await importFile(pa, file);
-  check('same phone: wipe → restore gives identical data', canon(await dump(pa)) === canon(original));
+  const r2 = await importFile(pa, file);
+  check('same phone: wipe → restore gives identical data', canon(await dump(pa)) === canon(original), r2.toast || r2.failed);
 
   // ---------- 5. Cancel leaves data untouched ----------
   const cur = await dump(pb);
@@ -120,7 +136,7 @@ fs.mkdirSync(`${lib.OUT}/bk`, { recursive: true });
   fs.writeFileSync(`${S}/bk/legacy.json`, JSON.stringify(legacy));
   const rl = await importFile(pb, `${S}/bk/legacy.json`);
   const ld = await dump(pb);
-  check('older-format backup still restores', !rl.failed && ld.intervals.length === exported.intervals.length && ld.areas.length === exported.areas.length, rl.failed || rl.toast);
+  check('older-format backup still restores', /^Backup restored/.test(rl.toast || '') && ld.intervals.length === exported.intervals.length && ld.areas.length === exported.areas.length, rl.failed || rl.toast);
 
   // ---------- 7. Large: ~3 years of tracking ----------
   const big = { ...exported, intervals: [] };
@@ -129,10 +145,9 @@ fs.mkdirSync(`${lib.OUT}/bk`, { recursive: true });
   while (big.intervals.length < 12000) { const len = (20 + (big.intervals.length * 37) % 160) * 60000; big.intervals.push({ id: 'big-' + big.intervals.length, areaId: areaIds[big.intervals.length % areaIds.length], subAreaId: null, start: new Date(t).toISOString(), end: new Date(t + len).toISOString(), updatedAt: new Date(t + len).toISOString() }); t += len + 5 * 60000; }
   big.active = [];
   fs.writeFileSync(`${S}/bk/big.json`, JSON.stringify(big));
-  let t0 = Date.now(); await importFile(pb, `${S}/bk/big.json`); const tImport = Date.now() - t0;
+  let t0 = Date.now(); const bigBack = await importFile(pb, `${S}/bk/big.json`); const tImport = Date.now() - t0;
   const bigDump = await dump(pb);
-  await pb.waitForTimeout(300); const bigToast = await toast(pb);
-  check('large backup restores completely', bigDump.intervals.length === big.intervals.length, `${big.intervals.length} intervals, ${(fs.statSync(`${S}/bk/big.json`).size / 1e6).toFixed(1)} MB, import+confirm ${tImport} ms | ${bigToast}`);
+  check('large backup restores completely', bigDump.intervals.length === big.intervals.length && bigBack.toast === 'Backup restored', `${big.intervals.length} intervals, ${(fs.statSync(`${S}/bk/big.json`).size / 1e6).toFixed(1)} MB, import+confirm ${tImport} ms | ${bigBack.toast || bigBack.failed}`);
   t0 = Date.now(); await exportFile(pb, `${S}/bk/big-export.json`); const tExport = Date.now() - t0;
   const reexp = JSON.parse(fs.readFileSync(`${S}/bk/big-export.json`, 'utf8'));
   check('large backup exports back out identically', reexp.intervals.length === big.intervals.length, `export ${tExport} ms`);
@@ -140,12 +155,13 @@ fs.mkdirSync(`${lib.OUT}/bk`, { recursive: true });
   // ---------- 8. Large AND overlapping (slow path) ----------
   const messy = { ...big, intervals: big.intervals.map((iv, i) => i % 10 ? iv : { ...iv, end: new Date(Date.parse(iv.end) + 40 * 60000).toISOString() }) };
   fs.writeFileSync(`${S}/bk/messy.json`, JSON.stringify(messy));
-  t0 = Date.now(); await importFile(pb, `${S}/bk/messy.json`); await pb.waitForTimeout(500);
+  t0 = Date.now(); const messyBack = await importFile(pb, `${S}/bk/messy.json`);
   const md = await dump(pb); const tMessy = Date.now() - t0;
   const ms = md.intervals.map(i => [Date.parse(i.start), Date.parse(i.end)]).sort((a, b) => a[0] - b[0]);
   const noOverlap = ms.every((x, i) => !i || ms[i - 1][1] <= x[0]);
   check('large backup with overlaps: restored without any overlap', noOverlap, `${md.intervals.length} intervals after clean-up, ${tMessy} ms`);
+  check('…and the message says how many records were fixed', /^Backup restored · \d+ overlapping records fixed$/.test(messyBack.toast || ''), messyBack.toast || messyBack.failed);
 
-  console.log('page errors:', [...pa.errs, ...pb.errs]);
+  check('no page errors', pa.errs.length + pb.errs.length === 0, [...pa.errs, ...pb.errs].join(' | '));
   await b.close();
 })();

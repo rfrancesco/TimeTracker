@@ -80,6 +80,11 @@ on launch/resume and shows an "App updated" toast.
   under it); Ionic sets `value`/`aria-label` as properties or moves them to inner
   inputs; a plain static server has no SPA fallback (load `/`, not `/day`); wait for
   the UI to reflect a DB write before measuring.
+- Tests use a 5 s default timeout (`lib.cjs`); pass a longer one only where a step is
+  really slow. Never probe for something optional with a waiting locator plus
+  `.catch()` (it silently costs the whole timeout): check `count()` or wait for the
+  expected outcome. Toasts: listen for `ionToastWillPresent` (Ionic reuses toast
+  elements, and a toast is gone 2.5 s later). `run.sh` prints each suite's duration.
 - Things that can only be checked on the phone (real gestures, system pickers,
   status-bar timing, share sheet): say so explicitly.
 
