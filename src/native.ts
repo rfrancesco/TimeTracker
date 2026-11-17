@@ -6,7 +6,7 @@ import { stopAt } from './timer';
 import { recordTimerAction } from './undo';
 import { iconFor } from './icons';
 import { onColor } from './color';
-import { areaWantsLiveUpdates, useLiveUpdatesEnabled } from './liveUpdates';
+import { areaShowsTime, useShowTimeEnabled } from './runningTime';
 import { useNavigate } from 'react-router-dom';
 
 /** The area's icon as a white-on-transparent PNG (base64), for the notification and chip. */
@@ -47,7 +47,8 @@ interface TimeTrackerPlugin {
     color?: string;
     onColor?: string;
     icon?: string; // base64 PNG, white glyph on transparent (older wrappers ignore it)
-    promote?: boolean; // false: quiet notification, no live update/ticking time (older wrappers ignore it)
+    promote?: boolean; // ask for a live update (always, nowadays)
+    showTime?: boolean; // the running time ticks in the live update (older wrappers ignore it)
   }): Promise<{ shown: boolean }>;
   hideTimer(): Promise<void>;
   takePendingStop(): Promise<{ start?: number; end?: number }>; // old APKs: read + forget in one step
@@ -136,18 +137,18 @@ export function NativeTimerSync() {
       color: area?.color,
       onColor: area ? onColor(area.color) : undefined,
       iconKey: area?.icon,
-      wantsLive: areaWantsLiveUpdates(area),
+      wantsLive: areaShowsTime(area),
     };
   });
-  const liveOn = useLiveUpdatesEnabled();
-  const key = state === undefined ? undefined : JSON.stringify(state && { ...state, wantsLive: undefined, promote: liveOn && state.wantsLive });
+  const liveOn = useShowTimeEnabled();
+  const key = state === undefined ? undefined : JSON.stringify(state && { ...state, wantsLive: undefined, promote: true, showTime: liveOn && state.wantsLive });
 
   useEffect(() => {
     if (!native || key === undefined) return;
     const sync = async () => {
       // Just stopped: the live query re-runs with the new state and syncs then.
       if (await applyPendingStop()) return;
-      const s = key && (JSON.parse(key) as NonNullable<typeof state> & { promote: boolean });
+      const s = key && (JSON.parse(key) as NonNullable<typeof state> & { promote: boolean; showTime: boolean });
       if (!s) return void quietly(native!.hideTimer());
       const { iconKey, wantsLive: _w, ...rest } = s;
       quietly(native!.showTimer({ ...rest, icon: iconKey ? await glyphPng(iconKey) : undefined }));

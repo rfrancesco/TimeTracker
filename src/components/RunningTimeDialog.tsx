@@ -7,7 +7,7 @@ import { close } from 'ionicons/icons';
 import { db, nowIso } from '../db';
 import { useAreas } from '../hooks';
 import { iconFor } from '../icons';
-import { areaWantsLiveUpdates, setLiveUpdatesEnabled, useLiveUpdatesEnabled } from '../liveUpdates';
+import { areaShowsTime, setShowTimeEnabled, useShowTimeEnabled } from '../runningTime';
 
 interface Props {
   open: boolean;
@@ -18,17 +18,17 @@ interface Props {
 }
 
 /**
- * Settings → Android app → Live updates: a global switch and, per area, whether its
- * timer shows as a live update. Without one, the notification is quiet (area icon,
- * "Since …", no ticking time) — e.g. for Sleep.
+ * Settings → Android app → Running time: every timer is a live update; this chooses,
+ * globally and per area, whether its running time ticks (status bar, lock screen,
+ * notification). Without it: icon-only chip and "Since …" — e.g. for Sleep.
  */
-export default function LiveUpdatesDialog({ open, onClose, systemAllowed, onOpenSystemSettings }: Props) {
+export default function RunningTimeDialog({ open, onClose, systemAllowed, onOpenSystemSettings }: Props) {
   const areas = useAreas();
-  const enabled = useLiveUpdatesEnabled();
+  const enabled = useShowTimeEnabled();
   const setArea = (id: string, on: boolean) => db.areas.update(id, { liveUpdates: on, updatedAt: nowIso() });
 
   return (
-    <IonModal isOpen={open} onDidDismiss={onClose} className="live-updates-dialog">
+    <IonModal isOpen={open} onDidDismiss={onClose} className="running-time-dialog">
       <IonHeader>
         <IonToolbar>
           <IonButtons slot="start">
@@ -36,7 +36,7 @@ export default function LiveUpdatesDialog({ open, onClose, systemAllowed, onOpen
               <IonIcon slot="icon-only" icon={close} />
             </IonButton>
           </IonButtons>
-          <IonTitle>Live updates</IonTitle>
+          <IonTitle>Running time</IonTitle>
         </IonToolbar>
       </IonHeader>
       <IonContent>
@@ -44,25 +44,25 @@ export default function LiveUpdatesDialog({ open, onClose, systemAllowed, onOpen
           <IonList>
             <IonItem button detail onClick={onOpenSystemSettings} lines="none">
               <IonLabel className="ion-text-wrap">
-                <h3>Off in Android settings</h3>
-                <p>Allow live updates for Tracker there first.</p>
+                <h3>Live updates are off in Android settings</h3>
+                <p>Allow them for Tracker to see the timer in the status bar.</p>
               </IonLabel>
             </IonItem>
           </IonList>
         )}
         <IonList>
           <IonItem lines="none">
-            <IonToggle checked={enabled} onIonChange={(e) => setLiveUpdatesEnabled(e.detail.checked)} aria-label="Live updates">
+            <IonToggle checked={enabled} onIonChange={(e) => setShowTimeEnabled(e.detail.checked)} aria-label="Show the running time">
               <IonLabel className="ion-text-wrap">
-                <h2>Live updates</h2>
-                <p>The running time in the status bar and on the lock screen</p>
+                <h2>Show the running time</h2>
+                <p>Ticking in the status bar and on the lock screen</p>
               </IonLabel>
             </IonToggle>
           </IonItem>
         </IonList>
         <IonList>
           <IonListHeader>
-            <IonLabel>Areas with live updates</IonLabel>
+            <IonLabel>Areas showing the time</IonLabel>
           </IonListHeader>
           {areas.map((a) => (
             <Fragment key={a.id}>
@@ -71,7 +71,7 @@ export default function LiveUpdatesDialog({ open, onClose, systemAllowed, onOpen
                   <IonIcon icon={iconFor(a.icon)} />
                 </span>
                 <IonToggle
-                  checked={areaWantsLiveUpdates(a)}
+                  checked={areaShowsTime(a)}
                   onIonChange={(e) => setArea(a.id, e.detail.checked)}
                   aria-label={a.name}
                 >
@@ -83,8 +83,7 @@ export default function LiveUpdatesDialog({ open, onClose, systemAllowed, onOpen
           ))}
         </IonList>
         <IonNote className="live-note">
-          Areas without live updates still show the notification and their icon in the status bar, without the ticking
-          time.
+          Other areas still show their live update (icon in the status bar), without the ticking time.
         </IonNote>
       </IonContent>
     </IonModal>

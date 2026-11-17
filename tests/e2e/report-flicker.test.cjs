@@ -11,7 +11,9 @@ const { chromium, devices } = require('playwright');
   // 40 days of data (Work 9–12, Reading 21–22), up to today
   await p.evaluate(() => new Promise((r) => { const q = indexedDB.open('timetracker'); q.onsuccess = () => { const t = q.result.transaction(['areas', 'intervals'], 'readwrite'); t.objectStore('areas').getAll().onsuccess = (e) => { const by = Object.fromEntries(e.target.result.map((a) => [a.name, a.id])); const st = t.objectStore('intervals'); for (let d = 0; d <= 40; d++) { const day = new Date(); day.setDate(day.getDate() - d); const at = (h) => { const x = new Date(day); x.setHours(h, 0, 0, 0); return x; }; for (const [id, area, h0, h1] of [['w', by.Work, 0, 1], ['r', by.Reading, 21, 22]]) { const s = d === 0 ? new Date(Date.now() - 3 * 3600e3) : at(h0); const en = d === 0 ? new Date(Date.now() - 2 * 3600e3) : at(h1); if (d === 0 && id === 'r') continue; st.put({ id: id + d, areaId: area, subAreaId: null, start: s.toISOString(), end: en.toISOString(), updatedAt: en.toISOString() }); } } }; t.oncomplete = r; }; }));
   await p.reload(); await p.waitForSelector('.area-pill-btn');
-  await p.locator('ion-tab-button[tab="reports"]').click(); await p.waitForSelector('.report');
+  await p.locator('ion-tab-button[tab="reports"]').click(); await p.waitForSelector('.period-label');
+  // Start from yesterday: today may legitimately be empty (e.g. just after midnight).
+  await p.locator('ion-button[aria-label="Previous period"]').click(); await p.waitForSelector('.report');
   await p.evaluate(() => {
     window.__frames = [];
     const tick = () => {

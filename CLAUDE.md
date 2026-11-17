@@ -104,12 +104,13 @@ on launch/resume and shows an "App updated" toast.
 ## Plans and open questions
 - **Android wrapper: rfrancesco/TimeTracker-android** (Capacitor; loads this app
   from Pages; CI builds the APK). Ongoing notification, no actions; tapping opens
-  the Timer tab (`openTimer` event). Per area (`Area.liveUpdates`, missing = on) plus
-  a global switch (`src/liveUpdates.ts`, Settings → Android app → Live updates): a
-  live update (promoted: status-bar chip + system chronometer, lock screen) or a quiet
-  notification (icon, "Since …", no ticking time). Say "live updates", not "chip".
+  the Timer tab (`openTimer` event). Every timer is a live update (promoted: chip at
+  the far left, top of the lock screen; quiet notifications rank after messaging
+  apps). "Running time" (Settings → Android app; per area `Area.liveUpdates`, missing
+  = on, plus a global switch in `src/runningTime.ts`) decides whether the time ticks
+  (system chronometer) or not (icon-only chip, "Since …"). Say "live updates", not "chip".
   No foreground service. Bridge: `src/native.ts` (no-op in browsers): mirrors the
-  running timer (`promote` flag), still applies Stops from older APKs (which had a
+  running timer (`promote` always, `showTime` per area), still applies Stops from older APKs (which had a
   Stop action) via `stopAt` + undo, exports through the native share sheet. Only add
   plugin methods, never change them (older APKs must keep working).
   Later idea: bundle the web app (submodule) and drop INTERNET.

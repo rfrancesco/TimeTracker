@@ -17,7 +17,7 @@ export interface Area {
   /** Start a new row in the area selector after this area. */
   breakAfter?: boolean;
   archived?: boolean;
-  /** Android app: show this area's timer as a live update (missing = yes). */
+  /** Android app: the live update shows this area's running time (missing = yes). */
   liveUpdates?: boolean;
   updatedAt: string;
 }
