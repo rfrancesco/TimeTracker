@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
   IonButton, IonButtons, IonContent, IonHeader, IonIcon, IonLabel, IonPage, IonSegment, IonSegmentButton,
@@ -35,8 +35,11 @@ const pct = (part: number, whole: number) => (whole > 0 ? `${Math.round((part / 
 
 export default function ReportPage() {
   const now = useNow(30_000);
-  const [period, setPeriod] = useState<Period>('day');
-  const [anchor, setAnchor] = useState(() => Date.now());
+  // What the controls ask for. What is shown follows once its data has loaded, so
+  // switching days never flashes an empty report in between (label and content
+  // change together, in one frame).
+  const [wantPeriod, setPeriod] = useState<Period>('day');
+  const [wantAnchor, setAnchor] = useState(() => Date.now());
   // Full period: the chart covers the whole day/week/month (incl. untracked and what's still to come).
   const [full, setFull] = useState(() => loadPref('report.full', true));
   const [selected, setSelected] = useState<string | null>(null);
@@ -47,14 +50,20 @@ export default function ReportPage() {
   const subAreas = useSubAreas();
   const active = useActive();
 
+  const wantRange = useMemo(() => periodRange(wantPeriod, wantAnchor), [wantPeriod, wantAnchor]);
+  const startIso = new Date(wantRange.start).toISOString();
+  const endIso = new Date(wantRange.end).toISOString();
+  const loaded = useLiveQuery(
+    async () => ({ period: wantPeriod, anchor: wantAnchor, intervals: await intervalsOverlapping(startIso, endIso) }),
+    [startIso, endIso, wantPeriod, wantAnchor],
+  );
+  const lastLoaded = useRef(loaded);
+  if (loaded) lastLoaded.current = loaded;
+  const shown = loaded ?? lastLoaded.current;
+  const period = shown?.period ?? wantPeriod;
+  const anchor = shown?.anchor ?? wantAnchor;
+  const intervals = useMemo(() => shown?.intervals ?? [], [shown]);
   const range = useMemo(() => periodRange(period, anchor), [period, anchor]);
-  const startIso = new Date(range.start).toISOString();
-  const endIso = new Date(range.end).toISOString();
-  const intervals =
-    useLiveQuery(
-      () => intervalsOverlapping(startIso, endIso),
-      [startIso, endIso],
-    ) ?? [];
   const first = useLiveQuery(() => db.intervals.orderBy('start').first());
   const firstEver = Math.min(
     first ? new Date(first.start).getTime() : Infinity,
@@ -75,7 +84,7 @@ export default function ReportPage() {
   ].filter((r) => r.value > 0);
   const base = full ? rest.length : report.total;
   const isCurrent = range.start <= now && now < range.end;
-  const canGoNext = shiftPeriod(period, anchor, 1) <= now;
+  const canGoNext = shiftPeriod(wantPeriod, wantAnchor, 1) <= now;
 
   const areaInfo = (id: string) => {
     const a = areas.find((x) => x.id === id);
@@ -116,7 +125,7 @@ export default function ReportPage() {
     setSelectedDay(null);
   }
   function move(n: number) {
-    setAnchor(shiftPeriod(period, anchor, n));
+    setAnchor(shiftPeriod(wantPeriod, wantAnchor, n));
     setSelected(null);
     setSelectedDay(null);
   }
@@ -130,7 +139,7 @@ export default function ReportPage() {
           <IonTitle>Reports</IonTitle>
         </IonToolbar>
         <IonToolbar>
-          <IonSegment value={period} onIonChange={(e) => changePeriod(e.detail.value as Period)}>
+          <IonSegment value={wantPeriod} onIonChange={(e) => changePeriod(e.detail.value as Period)}>
             <IonSegmentButton value="day"><IonLabel>Day</IonLabel></IonSegmentButton>
             <IonSegmentButton value="week"><IonLabel>Week</IonLabel></IonSegmentButton>
             <IonSegmentButton value="month"><IonLabel>Month</IonLabel></IonSegmentButton>
