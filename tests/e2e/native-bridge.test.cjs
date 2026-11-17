@@ -227,10 +227,16 @@ const FAKE_NATIVE = () => {
   lib.report('older APK (no peek/clear): the stop is applied via takePendingStop', oldState === 'stopped' && usedTake, oldState);
   await oldCtx.close();
 
+  // The browser-storage note is for the PWA only.
+  const storedNative = await p.locator('ion-item', { hasText: 'Stored on this device' }).innerText();
+  lib.report('Android app: no “may be cleared by the browser” note', /intervals/.test(storedNative) && !/browser|cleanup/.test(storedNative), storedNative.replace(/\s+/g, ' '));
+
   // In a plain browser there's no such section.
   const plain = await (await b.newContext({ ...devices['Pixel 7'] })).newPage();
   await plain.goto(lib.BASE); await plain.waitForSelector('.area-pill-btn');
   await plain.locator('ion-tab-button[tab="settings"]').click(); await plain.waitForTimeout(500);
+  const storedPwa = await plain.locator('ion-item', { hasText: 'Stored on this device' }).innerText();
+  lib.report('PWA: the storage note is still there', /may be cleared by the browser|protected from cleanup/.test(storedPwa), storedPwa.replace(/\s+/g, ' '));
   lib.report('browser/PWA: no Android section', (await plain.locator('ion-list-header', { hasText: 'Android app' }).count()) === 0);
 
   lib.report('no page errors', errs.length === 0, errs.join(' | '));

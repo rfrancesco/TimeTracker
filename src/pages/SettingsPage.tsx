@@ -13,7 +13,7 @@ import { iconFor } from '../icons';
 import { localDateKey } from '../time';
 import { BackupError, parseBackup } from '../backup';
 import { getThemePref, setThemePref, type ThemePref } from '../theme';
-import { native } from '../native';
+import { inWrapper, native } from '../native';
 import NativeStatusList from '../components/NativeStatusList';
 
 export default function SettingsPage() {
@@ -238,7 +238,11 @@ export default function SettingsPage() {
           <IonItem>
             <IonLabel>
               <h3>Stored on this device</h3>
-              <p>{intervalCount} intervals · {persisted ? 'protected from cleanup' : 'may be cleared by the browser'}</p>
+              <p>
+                {intervalCount} intervals
+                {/* Browser storage can be evicted unless persistent; the Android app keeps its own data. */}
+                {!inWrapper && ` · ${persisted ? 'protected from cleanup' : 'may be cleared by the browser'}`}
+              </p>
             </IonLabel>
           </IonItem>
           <IonItem button detail={false} onClick={doExport}>
