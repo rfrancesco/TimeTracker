@@ -582,7 +582,7 @@ ion-tabs .ion-page:not(.ion-page-hidden) {
 }
 
 /* Interval editor: native date + time fields */
-.datetime-field .datetime-label { width: 3.2em; color: var(--viz-muted); margin-inline-end: 8px; }
+.datetime-field .datetime-label { min-width: 3.2em; white-space: nowrap; color: var(--viz-muted); margin-inline-end: 8px; } /* fits "Switched" too */
 .datetime-field .date-input { flex: 1.5; }
 .datetime-field .time-input { flex: 1; text-align: end; }
 
@@ -665,3 +665,8 @@ ion-tabs .ion-page:not(.ion-page-hidden) {
 .editor-areas {
   padding-bottom: 20px;
 }
+
+/* Hold an area for "earlier": no text selection / callout; the Stop slot shows progress. */
+.area-pill-btn { -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; }
+.stop-button.area-hold { opacity: 1; }
+.stop-button.area-hold::part(native) { opacity: 1; }

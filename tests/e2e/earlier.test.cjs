@@ -1,0 +1,116 @@
+const lib = require('./lib.cjs');
+// "Earlier" (hold an area): start earlier while idle, switch earlier while running,
+// move the start of the running area. The Stop slot is the hold indicator; releasing
+// early cancels; a tap still starts at once; every action is undoable.
+const { chromium, devices } = require('playwright');
+(async () => {
+  const b = await chromium.launch();
+  const p = await (await b.newContext({ ...devices['Pixel 7'], timezoneId: 'Europe/Rome', colorScheme: process.env.SCHEME || 'dark' })).newPage();
+  const errs = []; p.on('pageerror', (e) => errs.push(e.message));
+  await p.clock.install({ time: new Date('2026-11-16T18:35:00+01:00') });
+  await p.goto(lib.BASE); await p.waitForSelector('.area-pill-btn');
+  // history: Thesis 16:00–17:30
+  await p.evaluate(() => new Promise((r) => { const q = indexedDB.open('timetracker'); q.onsuccess = () => { const t = q.result.transaction(['areas', 'intervals'], 'readwrite'); t.objectStore('areas').getAll().onsuccess = (e) => { const th = e.target.result.find((a) => a.name === 'Thesis'); t.objectStore('intervals').put({ id: 'th', areaId: th.id, subAreaId: null, start: '2026-11-16T15:00:00.000Z', end: '2026-11-16T16:30:00.000Z', updatedAt: '2026-11-16T16:30:00.000Z' }); }; t.oncomplete = r; }; }));
+  await p.reload(); await p.waitForSelector('.area-pill-btn'); await p.waitForTimeout(500);
+
+  const db = () => p.evaluate(() => new Promise((r) => { const q = indexedDB.open('timetracker'); q.onsuccess = () => { const t = q.result.transaction(['intervals', 'active', 'areas']); t.objectStore('areas').getAll().onsuccess = (e0) => { const n = Object.fromEntries(e0.target.result.map((a) => [a.id, a.name])); t.objectStore('intervals').getAll().onsuccess = (e) => { t.objectStore('active').get('current').onsuccess = (e2) => { const f = (s) => new Date(s).toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' }); const a = e2.target.result; r(`[${e.target.result.sort((x, y) => x.start.localeCompare(y.start)).map((i) => n[i.areaId] + ' ' + f(i.start) + '–' + f(i.end)).join(', ')}] ${a ? '▶ ' + n[a.areaId] + ' since ' + f(a.start) : 'idle'}`); }; }; }; }; }));
+  const pill = (name) => p.locator(`.timer-layout .area-pill-btn[aria-label="${name}"]`);
+  const press = async (name, ms) => { const r = await pill(name).boundingBox(); await p.mouse.move(r.x + r.width / 2, r.y + r.height / 2); await p.mouse.down(); await p.waitForTimeout(ms); };
+  const release = async () => { await p.mouse.up(); await p.waitForTimeout(400); };
+  const sheet = 'ion-modal.stop-sheet';
+  const title = () => p.locator(`${sheet} .sheet-title`).innerText();
+  const chip = (label) => p.locator(`${sheet} .sheet-times ion-chip`, { hasText: new RegExp(`^${label}$`) });
+  const apply = p.locator(`${sheet} .sheet-apply`);
+  const applyText = () => apply.innerText();
+  const hint = () => p.locator(`${sheet} .sheet-hint`).innerText();
+  const undo = async () => { await p.locator('.undo-button').click(); await p.waitForTimeout(500); };
+  const sheetGone = () => p.waitForSelector(`${sheet} .sheet-title`, { state: 'detached' });
+  const BASE = '[Thesis 16:00–17:30]';
+
+  // 1. Indicator while holding, and an early release cancels.
+  await press('Guitar', 320);
+  // Freeze the page clock (and with it the hold timer) while looking: a screenshot can
+  // take longer than the rest of the hold.
+  const freeze = async () => p.clock.pauseAt(new Date((await p.evaluate(() => Date.now())) + 20));
+  await freeze();
+  await p.screenshot({ path: `${lib.OUT}/earlier-1-idle-hold.png` });
+  const ind = await p.locator('.stop-button').evaluate((e) => ({ cls: e.className, text: e.innerText.trim(), bg: e.style.getPropertyValue('--background'), disabled: e.disabled }));
+  const guitarColor = await pill('Guitar').evaluate((e) => e.style.getPropertyValue('--area-color'));
+  lib.report('holding an area turns the Stop slot into the indicator (area colour, “Start earlier”)', /holding/.test(ind.cls) && /area-hold/.test(ind.cls) && /Start earlier/i.test(ind.text) && ind.bg === guitarColor && !ind.disabled, JSON.stringify(ind));
+  await p.mouse.up(); await p.clock.resume(); await p.waitForTimeout(400);
+  lib.report('releasing early cancels: nothing starts, no sheet', (await db()) === `${BASE} idle` && (await p.locator(`${sheet} .sheet-title`).count()) === 0, await db());
+  lib.report('…and the Stop slot is back to a (disabled) Stop', await p.locator('.stop-button').evaluate((e) => !/area-hold|holding/.test(e.className) && e.disabled && /Stop/i.test(e.innerText)));
+
+  // 2. A tap still starts at once.
+  await pill('Guitar').click(); await p.waitForTimeout(500);
+  lib.report('a tap still starts now', (await db()) === `${BASE} ▶ Guitar since 18:35`, await db());
+  await undo();
+
+  // 3. Idle: "Started earlier?"
+  await press('Guitar', 800); await release();
+  await p.waitForSelector(`${sheet} .sheet-title`);
+  const chips = await p.locator(`${sheet} .sheet-times ion-chip`).allInnerTexts();
+  lib.report('idle hold opens “Started earlier?” with After Thesis + quick times, no 🗑', (await title()) === 'Started earlier?' && chips.join('|') === 'After Thesis|5 min|15 min|30 min|1 h' && (await p.locator(`${sheet} .discard-chip`).count()) === 0, chips.join('|'));
+  await p.waitForTimeout(400); await p.screenshot({ path: `${lib.OUT}/earlier-2-started-sheet.png` });
+  lib.report('default: 5 min ago (the last interval ended over an hour ago)', /Start at 06:30 PM|Start at 18:30/i.test(await applyText()), await applyText());
+  const applyBg = await apply.evaluate((e) => e.style.getPropertyValue('--background'));
+  lib.report('the main button is in the held area’s colour', applyBg === guitarColor, applyBg);
+  await p.locator(`${sheet} .time-input input`).fill('17:00'); await p.waitForTimeout(300);
+  lib.report('a time before the last interval ended is refused (says why)', /overlaps Thesis \(until (17:30|05:30 PM)\)/.test(await hint()) && (await apply.evaluate((e) => e.disabled)), await hint());
+  await chip('After Thesis').click(); await p.waitForTimeout(200);
+  lib.report('“After Thesis” = right where Thesis ended', /17:30|05:30 PM/.test(await applyText()) && /Tracks Guitar since (17:30|05:30 PM)/.test(await hint()), `${await applyText()} | ${await hint()}`);
+  await apply.click(); await sheetGone(); await p.waitForTimeout(500);
+  lib.report('Start at 17:30 → Guitar running since 17:30', (await db()) === `${BASE} ▶ Guitar since 17:30`, await db());
+  await undo();
+  lib.report('undo → idle again', (await db()) === `${BASE} idle`, await db());
+
+  // start 30 min ago for the next steps
+  await press('Guitar', 800); await release(); await p.waitForSelector(`${sheet} .sheet-title`);
+  await chip('30 min').click(); await p.waitForTimeout(200); await apply.click(); await sheetGone(); await p.waitForTimeout(500);
+  lib.report('Start at 18:05 via “30 min”', (await db()) === `${BASE} ▶ Guitar since 18:05`, await db());
+
+  // 4. Running: hold another area → "Switched earlier?"
+  await press('Reading', 320);
+  await freeze();
+  await p.screenshot({ path: `${lib.OUT}/earlier-3-running-hold.png` });
+  const ind2 = await p.locator('.stop-button').evaluate((e) => e.innerText.trim());
+  lib.report('while running, the indicator says “Switch earlier”', /Switch earlier/i.test(ind2), ind2);
+  await p.clock.resume(); await p.waitForTimeout(500); await release(); await p.waitForSelector(`${sheet} .sheet-title`);
+  await chip('15 min').click(); await p.waitForTimeout(500); await p.screenshot({ path: `${lib.OUT}/earlier-4-switched-sheet.png` });
+  const swDisabled = await p.locator(`${sheet} .sheet-times ion-chip`).evaluateAll((es) => es.map((e) => `${e.innerText}:${e.disabled ? 'off' : 'on'}`).join(' '));
+  lib.report('“Switched earlier?”: times before Guitar started are greyed', (await title()) === 'Switched earlier?' && swDisabled === '5 min:on 15 min:on 30 min:on 1 h:off', swDisabled);
+  await chip('15 min').click(); await p.waitForTimeout(200);
+  lib.report('hint says what will be saved', /Saves Guitar (18:05|06:05 PM)–(18:20|06:20 PM), then Reading since (18:20|06:20 PM)/.test(await hint()), await hint());
+  await apply.click(); await sheetGone(); await p.waitForTimeout(500);
+  lib.report('Switch at 18:20 → Guitar saved 18:05–18:20, Reading since 18:20', (await db()) === `[Thesis 16:00–17:30, Guitar 18:05–18:20] ▶ Reading since 18:20`, await db());
+  await undo();
+  lib.report('undo → Guitar running since 18:05 again', (await db()) === `${BASE} ▶ Guitar since 18:05`, await db());
+
+  // 5. Hold the running area → move its start earlier.
+  await press('Guitar', 800); await release(); await p.waitForSelector(`${sheet} .sheet-title`);
+  lib.report('holding the running area: “Started earlier?” for the running timer', (await title()) === 'Started earlier?' && /since (18:05|06:05 PM)/.test(await p.locator(`${sheet} .sheet-running`).innerText()));
+  await chip('After Thesis').click(); await p.waitForTimeout(200);
+  lib.report('…hint compares with the current start', /Guitar since (17:30|05:30 PM) instead of (18:05|06:05 PM)/.test(await hint()), await hint());
+  await apply.click(); await sheetGone(); await p.waitForTimeout(500);
+  lib.report('→ Guitar since 17:30 (same timer, earlier start)', (await db()) === `${BASE} ▶ Guitar since 17:30`, await db());
+  await undo();
+  lib.report('undo → since 18:05 again', (await db()) === `${BASE} ▶ Guitar since 18:05`, await db());
+
+  // 6. Switching within a minute of the start relabels (same rule as switching live).
+  await press('Reading', 800); await release(); await p.waitForSelector(`${sheet} .sheet-title`);
+  await p.locator(`${sheet} .time-input input`).fill('18:05'); await p.waitForTimeout(300);
+  lib.report('switch at Guitar’s start = relabel (hint says so)', /Under a minute of Guitar: the timer becomes Reading since (18:05|06:05 PM)/.test(await hint()), await hint());
+  await apply.click(); await sheetGone(); await p.waitForTimeout(500);
+  lib.report('→ Reading since 18:05, nothing saved for Guitar', (await db()) === `${BASE} ▶ Reading since 18:05`, await db());
+  await undo();
+
+  // 7. Holding Stop still opens "Stopped earlier?" (the mode resets).
+  const sb = await p.locator('.stop-button').boundingBox();
+  await p.mouse.move(sb.x + sb.width / 2, sb.y + sb.height / 2); await p.mouse.down(); await p.waitForTimeout(800); await p.mouse.up();
+  await p.waitForSelector(`${sheet} .sheet-title`);
+  lib.report('holding Stop still opens “Stopped earlier?” with 🗑', (await title()) === 'Stopped earlier?' && (await p.locator(`${sheet} .discard-chip`).count()) === 1);
+  await p.screenshot({ path: `${lib.OUT}/earlier-stop-after.png` });
+
+  lib.report('no page errors', errs.length === 0, errs.join(' | '));
+  await b.close();
+})();

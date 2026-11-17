@@ -66,6 +66,13 @@ on launch/resume and shows an "App updated" toast.
   opens "Stopped earlier?" (quick times + 🗑 as choices; the tall main button applies
   the selection, so discarding takes two deliberate taps);
   releasing early cancels (never stops).
+- Earlier, for areas too (tap = now, hold = earlier): holding an area makes the Stop
+  slot the indicator (area colour, ⏪ + area icon, "Start earlier"/"Switch earlier",
+  same fill) and opens the same sheet (`StopEarlierSheet`, modes stop/start/switch):
+  idle → "Started earlier?" (`startAt`, never before the last interval's end; quick
+  "After <last area>"); the running area → move its start (`restartAt`); another area
+  while running → "Switched earlier?" (`switchAt`, relabel rule under 1 min). All
+  through `recordTimerAction` (undoable).
 - Undo/redo: ↶ ↷ top-right on Timer (fixed slots, each shown only when usable). The
   last 20 timer actions (start, area/sub-area change, stop, rewind, discard,
   notification Stop) are recorded via `recordTimerAction` in `src/undo.ts` as
@@ -102,14 +109,6 @@ on launch/resume and shows an "App updated" toast.
   applies a notification Stop via `stopAt` + undo, exports through the native share
   sheet. Only add plugin methods, never change them (older APKs must keep working).
   Later idea: bundle the web app (submodule) and drop INTERNET.
-- **Queued, approved, not built: start/switch earlier** (mockup approved). Tap = now,
-  hold = earlier, for every button. Hold an area while idle → "Started earlier?"
-  (quick times incl. "After <last area>", never before the last interval's end);
-  while running → "Switched earlier?" (saves the running timer up to then, starts the
-  held area from then; times before its start greyed). Both reuse the rewind sheet;
-  apply button in the held area's colour (▶ "Start at …" / ⇄ "Switch at …"). Hold
-  feedback: the Stop slot becomes the indicator (area colour, ⏪ + area icon,
-  "Start earlier" / "Switch earlier", fills right-to-left like Rewind). Undoable.
 - **Still being thought about, not decided: area taxonomy.** Areas currently mix
   activity, place and company; possible named groups (Necessities / At home / Out)
   with group totals in reports. Until decided, use "main activity wins" as the

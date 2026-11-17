@@ -7,10 +7,10 @@ import { arrowRedo, arrowUndo, playBack, stop as stopIcon } from 'ionicons/icons
 import AreaPill from '../components/AreaPill';
 import SubAreaChips from '../components/SubAreaChips';
 import { db } from '../db';
-import { useActive, useAreas, useDarkMode, useNow, useSubAreas, useToast } from '../hooks';
-import StopEarlierSheet from '../components/StopEarlierSheet';
+import { useActive, useAreas, useDarkMode, useNow, useSubAreas, useToast, type AreaView } from '../hooks';
+import StopEarlierSheet, { type RewindMode } from '../components/StopEarlierSheet';
 import { BACKGROUND_TINT, themeBackground, tintOverBackground } from '../color';
-import { discardActive, formatDuration, stopAt, track } from '../timer';
+import { discardActive, formatDuration, restartAt, startAt, stopAt, switchAt, track } from '../timer';
 import { recordTimerAction, redo, undo, useUndoRedo } from '../undo';
 import { iconFor } from '../icons';
 import { startOfLocalDay } from '../time';
@@ -81,6 +81,7 @@ export default function TimerPage() {
       longPressed.current = true;
       navigator.vibrate?.(25);
       setHolding(false);
+      setMode({ kind: 'stop' });
       setStopSheet(true);
     }, HOLD_DONE);
   };
@@ -89,6 +90,47 @@ export default function TimerPage() {
     window.clearTimeout(showTimer.current);
     setHolding(false);
   };
+
+  // ---- Hold an area: "earlier" (start earlier while idle, switch earlier while
+  // running, or move the start of the running area). Same timings as Stop; the Stop
+  // slot shows the progress, in the held area's colour (the thumb covers the area).
+  const [mode, setMode] = useState<RewindMode>({ kind: 'stop' });
+  const [areaHold, setAreaHold] = useState<AreaView | null>(null);
+  const areaShowTimer = useRef<number | undefined>(undefined);
+  const areaDoneTimer = useRef<number | undefined>(undefined);
+  const areaHoldUsed = useRef(false); // the press became a hold: the click that follows is not a tap
+  const last = useLiveQuery(() => db.intervals.orderBy('end').last());
+  const lastEnd = last ? Date.parse(last.end) : -Infinity;
+  const startAreaPress = (a: AreaView) => {
+    areaHoldUsed.current = false;
+    window.clearTimeout(areaShowTimer.current);
+    window.clearTimeout(areaDoneTimer.current);
+    areaShowTimer.current = window.setTimeout(() => {
+      areaHoldUsed.current = true;
+      setAreaHold(a);
+    }, HOLD_SHOW);
+    areaDoneTimer.current = window.setTimeout(() => {
+      navigator.vibrate?.(25);
+      setAreaHold(null);
+      const switching = active && a.id !== active.areaId;
+      setMode(switching ? { kind: 'switch', area: a } : { kind: 'start', area: a, min: lastEnd, afterName: last ? nameOf(last.areaId) : undefined });
+      setStopSheet(true);
+    }, HOLD_DONE);
+  };
+  const endAreaPress = () => {
+    window.clearTimeout(areaShowTimer.current);
+    window.clearTimeout(areaDoneTimer.current);
+    setAreaHold(null);
+  };
+  const areaHoldLabel = areaHold && (active && areaHold.id !== active.areaId ? 'Switch earlier' : 'Start earlier');
+
+  async function doStartEarlier(a: AreaView, ms: number) {
+    if (active?.areaId === a.id) await recordTimerAction(`start ${a.name} earlier`, () => restartAt(ms));
+    else await recordTimerAction(`start ${a.name} earlier`, () => startAt(a.id, null, ms));
+  }
+  async function doSwitchEarlier(a: AreaView, ms: number) {
+    await recordTimerAction(`switch to ${a.name} earlier`, () => switchAt(a.id, null, ms));
+  }
   const subsOfActive = subAreas.filter((s) => s.areaId === active?.areaId && !s.archived);
   const elapsed = active ? now - new Date(active.start).getTime() : 0;
 
@@ -172,7 +214,14 @@ export default function TimerPage() {
             areas={areas}
             background={pageBackground}
             selectedId={active?.areaId}
+            onPressStart={startAreaPress}
+            onPressEnd={endAreaPress}
             onSelect={(a) => {
+              if (areaHoldUsed.current) {
+                // The press became a hold (sheet opened, or released early = cancelled): not a tap.
+                areaHoldUsed.current = false;
+                return;
+              }
               haptic();
               // Re-tapping the running area keeps its sub-area.
               if (a.id === active?.areaId) return;
@@ -195,12 +244,15 @@ export default function TimerPage() {
 
           <div className="stop-wrap">
             <IonButton
-              className={`stop-button${holding ? ' holding' : ''}`}
-              style={{ ['--fill-ms' as string]: `${HOLD_DONE - HOLD_SHOW}ms` }}
+              className={`stop-button${holding || areaHold ? ' holding' : ''}${areaHold ? ' area-hold' : ''}`}
+              style={{
+                ['--fill-ms' as string]: `${HOLD_DONE - HOLD_SHOW}ms`,
+                ...(areaHold && { ['--background' as string]: areaHold.color, ['--color' as string]: areaHold.onColor }),
+              }}
               shape="round"
               size="large"
-              color="danger"
-              disabled={!active}
+              color={areaHold ? undefined : 'danger'}
+              disabled={!active && !areaHold}
               onPointerDown={startPress}
               onPointerUp={cancelPress}
               onPointerLeave={cancelPress}
@@ -220,19 +272,35 @@ export default function TimerPage() {
               {/* Both labels (icon + text) share one cell, so the button is always as wide
                   as the longer one and each is centred as a group. */}
               <span className="stop-labels">
-                <span className={holding ? 'off' : undefined}>
+                <span className={holding || areaHold ? 'off' : undefined}>
                   <IonIcon icon={stopIcon} />
                   Stop
                 </span>
-                <span className={holding ? undefined : 'off'}>
+                <span className={holding && !areaHold ? undefined : 'off'}>
                   <IonIcon icon={playBack} />
                   Rewind
                 </span>
+                {areaHold && (
+                  <span className="area-hold-label">
+                    <IonIcon icon={playBack} />
+                    <IonIcon icon={iconFor(areaHold.icon)} />
+                    {areaHoldLabel}
+                  </span>
+                )}
               </span>
             </IonButton>
           </div>
 
           <StopEarlierSheet
+            mode={mode}
+            onStart={(ms) => {
+              setStopSheet(false);
+              if (mode.kind === 'start') doStartEarlier(mode.area, ms);
+            }}
+            onSwitch={(ms) => {
+              setStopSheet(false);
+              if (mode.kind === 'switch') doSwitchEarlier(mode.area, ms);
+            }}
             active={active}
             area={activeArea}
             subName={activeSub?.name}

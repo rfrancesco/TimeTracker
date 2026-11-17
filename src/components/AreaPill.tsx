@@ -9,6 +9,9 @@ interface Props {
   onSelect: (area: AreaView) => void;
   /** The colour behind the selector (e.g. the tinted Timer page); defaults to the theme background. */
   background?: string;
+  /** Press-and-hold support (Timer page): called on press, and on release/cancel. */
+  onPressStart?: (area: AreaView) => void;
+  onPressEnd?: () => void;
 }
 
 /** Split areas into rows at each area marked `breakAfter`. */
@@ -26,7 +29,7 @@ function toRows(areas: AreaView[]) {
  * when that reads on the surface behind it, and is adjusted for contrast when
  * it doesn't (e.g. a dark icon on a page tinted by another dark area).
  */
-export default function AreaPill({ areas, selectedId, onSelect, background }: Props) {
+export default function AreaPill({ areas, selectedId, onSelect, background, onPressStart, onPressEnd }: Props) {
   const dark = useDarkMode();
   const surface = surfaceOver(background ?? themeBackground(dark));
   return (
@@ -49,6 +52,11 @@ export default function AreaPill({ areas, selectedId, onSelect, background }: Pr
                   ['--icon-color' as string]: selected ? a.onColor : readableOn(a.color, surface),
                 }}
                 onClick={() => onSelect(a)}
+                onPointerDown={onPressStart && (() => onPressStart(a))}
+                onPointerUp={onPressEnd}
+                onPointerLeave={onPressEnd}
+                onPointerCancel={onPressEnd}
+                onContextMenu={onPressStart && ((e) => e.preventDefault())}
               >
                 <IonIcon icon={iconFor(a.icon)} />
                 <IonRippleEffect type="unbounded" />

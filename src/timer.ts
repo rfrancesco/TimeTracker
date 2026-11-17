@@ -1,5 +1,5 @@
 import { db, type ActiveTimer, type Interval } from './db';
-import { commitTimerSpan } from './constraints';
+import { ConstraintError, commitTimerSpan, updateActive } from './constraints';
 
 /** Below this, switching relabels the running timer instead of splitting it, and stopping discards it. */
 export const RELABEL_THRESHOLD_MS = 60_000;
@@ -74,6 +74,58 @@ export async function stopAt(endMs = Date.now()): Promise<StopResult | null> {
 }
 
 export const stop = () => stopAt(Date.now());
+
+// ---- "Earlier": the timer actions for when you forgot to start or to switch ----
+
+/** End of the latest saved interval (ms), or -Infinity. Nothing may start before it. */
+export async function latestEnd(): Promise<number> {
+  const last = await db.intervals.orderBy('end').last();
+  return last ? Date.parse(last.end) : -Infinity;
+}
+
+/**
+ * Forgot to start: start tracking at a past moment. Only while nothing runs, and
+ * never before the latest saved interval ends (no overlap) or in the future.
+ */
+export async function startAt(areaId: string, subAreaId: string | null, startMs: number): Promise<ActiveTimer> {
+  return db.transaction('rw', [db.active, db.intervals], async () => {
+    if (await getActive()) throw new ConstraintError('A timer is already running');
+    if (startMs > Date.now()) throw new ConstraintError('Start must be in the past');
+    if (startMs < (await latestEnd())) throw new ConstraintError('That overlaps saved time');
+    const after: ActiveTimer = { key: 'current', areaId, subAreaId, start: new Date(startMs).toISOString() };
+    await db.active.put(after);
+    return after;
+  });
+}
+
+/** Started late: move the running timer's start (not before the latest saved interval ends). */
+export async function restartAt(startMs: number): Promise<void> {
+  const a = await getActive();
+  if (!a) throw new ConstraintError('Nothing is running');
+  if (startMs < (await latestEnd())) throw new ConstraintError('That overlaps saved time');
+  await updateActive({ start: startMs, areaId: a.areaId, subAreaId: a.subAreaId });
+}
+
+/**
+ * Forgot to switch: the running timer ends at `atMs` (saved) and `areaId` runs from
+ * then on. Under a minute after the running timer's start it is a relabel instead
+ * (same rule as switching live).
+ */
+export async function switchAt(areaId: string, subAreaId: string | null, atMs: number): Promise<void> {
+  await db.transaction('rw', [db.active, db.intervals], async () => {
+    const a = await getActive();
+    if (!a) throw new ConstraintError('Nothing is running');
+    const start = Date.parse(a.start);
+    if (atMs > Date.now()) throw new ConstraintError('That is in the future');
+    if (atMs < start) throw new ConstraintError('That is before the timer started');
+    if (atMs - start < RELABEL_THRESHOLD_MS) {
+      await db.active.put({ ...a, areaId, subAreaId });
+      return;
+    }
+    await commitTimerSpan(a, atMs);
+    await db.active.put({ key: 'current', areaId, subAreaId, start: new Date(atMs).toISOString() });
+  });
+}
 
 // (Undo/redo of timer actions: src/undo.ts, snapshot-based.)
 
