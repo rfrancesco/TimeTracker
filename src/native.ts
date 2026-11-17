@@ -47,7 +47,9 @@ interface TimeTrackerPlugin {
     icon?: string; // base64 PNG, white glyph on transparent (older wrappers ignore it)
   }): Promise<{ shown: boolean }>;
   hideTimer(): Promise<void>;
-  takePendingStop(): Promise<{ start?: number; end?: number }>;
+  takePendingStop(): Promise<{ start?: number; end?: number }>; // old APKs: read + forget in one step
+  peekPendingStop(): Promise<{ start?: number; end?: number }>; // newer APKs: read…
+  clearPendingStop(o: { start: number }): Promise<void>; // …and forget once applied
   shareFile(o: { name: string; text: string; mimeType?: string }): Promise<void>;
   status(): Promise<NativeStatus>;
   openNotificationSettings(): Promise<void>;
@@ -82,19 +84,37 @@ const quietly = (p: Promise<unknown> | undefined) =>
     (e: unknown) => (lastBridgeError = e instanceof Error ? e.message : String(e)),
   );
 
-/** Apply a Stop pressed on the notification, if it still refers to the running timer. */
+/**
+ * Apply a Stop pressed on the notification, if it still refers to the running timer.
+ * Newer APKs keep the stop until we confirm (peek → apply → clear), so a reload in
+ * between (e.g. an app update on resume) can't lose it; applying twice is harmless,
+ * because once that timer is stopped the stop no longer matches and is just cleared.
+ * Runs one at a time; an error in one run never blocks later ones.
+ */
 let applying: Promise<boolean> = Promise.resolve(false);
 function applyPendingStop(): Promise<boolean> {
-  applying = applying.then(async () => {
+  const run = async () => {
     if (!native) return false;
-    const p = await native.takePendingStop().catch(() => ({}) as { start?: number; end?: number });
-    if (p.start == null || p.end == null) return false;
+    let twoStep = true;
+    let p: { start?: number; end?: number } = await native.peekPendingStop().catch(() => {
+      twoStep = false;
+      return null as never;
+    });
+    if (!twoStep) p = await native.takePendingStop().catch(() => ({}));
+    if (p?.start == null || p.end == null) return false;
+    const start = p.start;
     const active = await db.active.get('current');
-    if (!active || Date.parse(active.start) !== p.start) return false; // already stopped/changed in the app
-    const name = (await db.areas.get(active.areaId))?.name ?? 'timer';
-    // Like a stop in the app: ↶ on the Timer page can undo it.
-    return !!(await recordTimerAction(`stop ${name}`, () => stopAt(p.end)));
-  });
+    let applied = false;
+    if (active && Date.parse(active.start) === start) {
+      const name = (await db.areas.get(active.areaId))?.name ?? 'timer';
+      // Like a stop in the app: ↶ on the Timer page can undo it.
+      applied = !!(await recordTimerAction(`stop ${name}`, () => stopAt(p.end)));
+    }
+    // Applied, or no longer applicable (already stopped/changed in the app): forget it.
+    if (twoStep) await quietly(native.clearPendingStop({ start }));
+    return applied;
+  };
+  applying = applying.then(run, run).catch(() => false);
   return applying;
 }
 

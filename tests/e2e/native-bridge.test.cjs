@@ -9,19 +9,23 @@ const FAKE_NATIVE = () => {
   window.androidBridge = { postMessage() {} };
   const calls = (window.__calls = []);
   const state = (window.__native = { listeners: [] });
-  const saved = sessionStorage.getItem('pendingStop'); // a Stop recorded while the app was closed
-  state.pending = saved ? JSON.parse(saved) : null;
-  sessionStorage.removeItem('pendingStop');
-  const promise = ['showTimer', 'hideTimer', 'takePendingStop', 'shareFile', 'status', 'openNotificationSettings', 'removeListener'];
+  // The pending stop lives in "SharedPreferences": it survives reloads (sessionStorage here).
+  const KEY = 'nativePending';
+  if (sessionStorage.getItem('pendingStop')) { sessionStorage.setItem(KEY, sessionStorage.getItem('pendingStop')); sessionStorage.removeItem('pendingStop'); }
+  const getPending = () => JSON.parse(sessionStorage.getItem(KEY) || 'null');
+  const setPending = (v) => (v ? sessionStorage.setItem(KEY, JSON.stringify(v)) : sessionStorage.removeItem(KEY));
+  const oldApk = !!window.__oldApk; // an APK from before peek/clear existed
+  const promise = ['showTimer', 'hideTimer', 'takePendingStop', 'shareFile', 'status', 'openNotificationSettings', 'removeListener', ...(oldApk ? [] : ['peekPendingStop', 'clearPendingStop'])];
   window.Capacitor = {
     PluginHeaders: [{ name: 'TimeTracker', methods: [...promise.map((name) => ({ name, rtype: 'promise' })), { name: 'addListener', rtype: 'callback' }] }],
     nativePromise(_plugin, method, opts) {
       calls.push([method, opts]);
-      if (method === 'takePendingStop') {
-        const p = state.pending;
-        state.pending = null;
-        return Promise.resolve(p || {});
+      if (method === 'takePendingStop') { const p = getPending(); setPending(null); return Promise.resolve(p || {}); }
+      if (method === 'peekPendingStop') {
+        if (window.__stallPeek) return new Promise(() => {}); // never answers: the page reloads meanwhile
+        return Promise.resolve(getPending() || {});
       }
+      if (method === 'clearPendingStop') { if (getPending()?.start === opts.start) setPending(null); return Promise.resolve(); }
       if (method === 'status') return Promise.resolve({ sdk: 37, permission: 'granted', notificationsEnabled: true, liveUpdatesAllowed: false, promotable: true, posted: true, promoted: false });
       return Promise.resolve(method === 'showTimer' ? { shown: true } : undefined);
     },
@@ -30,8 +34,9 @@ const FAKE_NATIVE = () => {
       return 'cb' + state.listeners.length;
     },
   };
+  window.__pending = getPending;
   window.__notificationStop = (start, end) => {
-    state.pending = { start, end };
+    setPending({ start, end });
     state.listeners.forEach((cb) => cb({}));
   };
 };
@@ -49,7 +54,7 @@ const FAKE_NATIVE = () => {
   await p.waitForTimeout(500);
 
   const db = () => p.evaluate(() => new Promise((r) => { const q = indexedDB.open('timetracker'); q.onsuccess = () => { const t = q.result.transaction(['intervals', 'active', 'areas']); t.objectStore('areas').getAll().onsuccess = (e0) => { const n = Object.fromEntries(e0.target.result.map((a) => [a.id, a.name])); t.objectStore('intervals').getAll().onsuccess = (e) => { t.objectStore('active').get('current').onsuccess = (e2) => { const f = (s) => new Date(s).toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' }); const a = e2.target.result; r(`[${e.target.result.sort((x, y) => x.start.localeCompare(y.start)).map((i) => n[i.areaId] + ' ' + f(i.start) + '–' + f(i.end)).join(', ')}] ${a ? '▶ ' + n[a.areaId] + ' since ' + f(a.start) : 'idle'}`); }; }; }; }; }));
-  const calls = () => p.evaluate(() => window.__calls.filter(([m]) => m !== 'takePendingStop'));
+  const calls = () => p.evaluate(() => window.__calls.filter(([m]) => !['takePendingStop', 'peekPendingStop', 'clearPendingStop'].includes(m)));
   const last = async () => (await calls()).at(-1);
   const activeStart = () => p.evaluate(() => new Promise((r) => { const q = indexedDB.open('timetracker'); q.onsuccess = () => { q.result.transaction('active').objectStore('active').get('current').onsuccess = (e) => r(e.target.result && Date.parse(e.target.result.start)); }; }));
   const tap = async (name) => { await p.locator(`.timer-layout .area-pill-btn[aria-label="${name}"]`).click(); await p.waitForTimeout(400); };
@@ -131,6 +136,22 @@ const FAKE_NATIVE = () => {
   try { parsed = JSON.parse(share[1].text); } catch {}
   lib.report('export → native shareFile with the backup JSON', !!share && /^timetracker-\d{4}-\d{2}-\d{2}\.json$/.test(share[1].name) && parsed?.app && parsed.intervals?.length === 1, share ? share[1].name : 'not called');
 
+  // The app reloads (e.g. an update on resume) while it is reading the pending stop:
+  // the stop must survive and be applied after the reload, then cleared.
+  await p.locator('ion-tab-button[tab="timer"]').click(); await p.waitForTimeout(300);
+  await tap('Guitar'); await p.waitForTimeout(300);
+  const s2 = await activeStart();
+  await ff(20);
+  await p.evaluate(() => { window.__stallPeek = true; });
+  await p.evaluate(([s]) => window.__notificationStop(s, s + 12 * 60000), [s2]);
+  await p.waitForTimeout(300);
+  const midway = await db();
+  await p.reload(); await p.waitForSelector('.area-pill-btn'); await p.waitForTimeout(800);
+  lib.report('reload while the stop is being read → still applied after the reload', midway.includes('▶ Guitar') && (await db()).includes('Guitar 18:') && (await db()).endsWith('idle'), `${midway} → ${await db()}`);
+  lib.report('…and only then forgotten by the native side', (await p.evaluate(() => window.__pending())) === null);
+  lib.report('…and still undoable with ↶', await p.locator('.undo-button').evaluate((e) => e.classList.contains('show')));
+  await p.locator('ion-tab-button[tab="settings"]').click(); await p.waitForTimeout(400);
+
   // Settings → Android app: diagnostics from the native side.
   const section = p.locator('ion-list', { has: p.locator('ion-list-header', { hasText: 'Android app' }) });
   const rows = (await section.locator('ion-item').allInnerTexts()).map((t) => t.replace(/\s+/g, ' ').trim());
@@ -138,6 +159,22 @@ const FAKE_NATIVE = () => {
   await section.locator('ion-item', { hasText: 'Live updates' }).click(); await p.waitForTimeout(300);
   lib.report('tapping it opens the system notification settings', (await calls()).some(([m]) => m === 'openNotificationSettings'));
   await p.screenshot({ path: `${lib.OUT}/native-settings.png` });
+
+  // An older APK (no peek/clear) still gets its stops applied, via takePendingStop.
+  const oldCtx = await b.newContext({ ...devices['Pixel 7'], timezoneId: 'Europe/Rome' });
+  await oldCtx.addInitScript(() => { window.__oldApk = true; });
+  await oldCtx.addInitScript(FAKE_NATIVE);
+  const po = await oldCtx.newPage(); po.on('pageerror', (e) => errs.push(e.message));
+  await po.goto(lib.BASE); await po.waitForSelector('.area-pill-btn');
+  await po.locator('.timer-layout .area-pill-btn[aria-label="Reading"]').click(); await po.waitForSelector('.stop-button'); await po.waitForTimeout(300);
+  const so = await po.evaluate(() => new Promise((r) => { const q = indexedDB.open('timetracker'); q.onsuccess = () => { q.result.transaction('active').objectStore('active').get('current').onsuccess = (e) => r(Date.parse(e.target.result.start)); }; }));
+  await po.evaluate(([s]) => window.__notificationStop(s - 0, s + 5 * 60000), [so - 10 * 60000]); // a stale one first: ignored
+  await po.evaluate(([s]) => window.__notificationStop(s, Date.now()), [so]);
+  await po.waitForTimeout(700);
+  const oldState = await po.evaluate(() => new Promise((r) => { const q = indexedDB.open('timetracker'); q.onsuccess = () => { q.result.transaction('active').objectStore('active').get('current').onsuccess = (e) => r(e.target.result ? 'running' : 'stopped'); }; }));
+  const usedTake = await po.evaluate(() => window.__calls.some(([m]) => m === 'takePendingStop') && !window.__calls.some(([m]) => m === 'peekPendingStop' && false));
+  lib.report('older APK (no peek/clear): the stop is applied via takePendingStop', oldState === 'stopped' && usedTake, oldState);
+  await oldCtx.close();
 
   // In a plain browser there's no such section.
   const plain = await (await b.newContext({ ...devices['Pixel 7'] })).newPage();
