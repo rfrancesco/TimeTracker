@@ -207,6 +207,12 @@ export default function TimerPage() {
               </>
             ) : (
               <>
+                {/* Invisible stand-in for the area name, so the caption and number sit
+                    on exactly the same lines as in the running states. */}
+                <div className="timer-label placeholder" aria-hidden>
+                  <IonIcon icon={iconFor('moon')} />
+                  <span>Timer</span>
+                </div>
                 <div className="timer-caption">Tap an area to start</div>
                 <div className="timer-digits idle">0:00:00</div>
               </>

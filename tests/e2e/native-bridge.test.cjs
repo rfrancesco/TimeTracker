@@ -211,7 +211,7 @@ const FAKE_NATIVE = () => {
   lib.report('…and in the app: “Started at” over the muted start time; the start time in the tab', quiet.caption.trim() === 'Started at' && quiet.number.trim() === startHm && quiet.muted && quiet.tab.trim() === startHm, JSON.stringify(quiet));
   lib.report('…while Today keeps the real total', /\d+m$/.test(quiet.today.replace(/\s+/g, ' ').trim()) && !/since/i.test(quiet.today), quiet.today.replace(/\s+/g, ' '));
   // Nothing else moves between a quiet and a ticking area (at two screen widths).
-  const layout = async () => p.evaluate(() => ({ pills: Math.round(document.querySelector('.area-pills').getBoundingClientRect().top), display: Math.round(document.querySelector('.timer-display').getBoundingClientRect().height) }));
+  const layout = async () => p.evaluate(() => { const top = (sel) => Math.round(document.querySelector(sel).getBoundingClientRect().top); return { pills: top('.area-pills'), caption: top('.timer-caption'), number: top('.timer-digits'), display: Math.round(document.querySelector('.timer-display').getBoundingClientRect().height) }; });
   const quietL = await layout();
   await p.screenshot({ path: `${lib.OUT}/native-quiet-timer.png` });
   const wk = await run('Work');
@@ -223,16 +223,16 @@ const FAKE_NATIVE = () => {
   lib.report('Guitar (time on, live update on) → live update that ticks', gt?.title === 'Guitar' && gt.promote === true && gt.showTime === true, j(gt));
   const tickL = await layout();
   lib.report('ticking: “Started at <time>” above the digits', /^Started at \d\d:\d\d/.test((await p.locator('.timer-caption').innerText()).trim()), await p.locator('.timer-caption').innerText());
-  lib.report('quiet and ticking areas share one layout (area buttons don’t move)', quietL.pills === tickL.pills && quietL.display === tickL.display, `${JSON.stringify(quietL)} vs ${JSON.stringify(tickL)}`);
+  lib.report('quiet and ticking areas share one layout (caption, number and area buttons don’t move)', quietL.pills === tickL.pills && quietL.caption === tickL.caption && quietL.number === tickL.number, `${JSON.stringify(quietL)} vs ${JSON.stringify(tickL)}`);
   await p.setViewportSize({ width: 360, height: 760 }); await p.waitForTimeout(300);
   const tick360 = await layout();
   await tap('Sleep'); await ff(2); await p.waitForTimeout(400);
   const quiet360 = await layout();
   await p.locator('.stop-button').click(); await p.waitForTimeout(500);
   const idle360 = await layout();
-  lib.report('idle: “Tap an area to start”, same layout too', (await p.locator('.timer-caption').innerText()).trim() === 'Tap an area to start' && idle360.pills === tick360.pills, `${JSON.stringify(idle360)} vs ${JSON.stringify(tick360)}`);
+  lib.report('idle: “Tap an area to start”, same layout too', (await p.locator('.timer-caption').innerText()).trim() === 'Tap an area to start' && idle360.pills === tick360.pills && idle360.caption === tick360.caption && idle360.number === tick360.number, `${JSON.stringify(idle360)} vs ${JSON.stringify(tick360)}`);
   await tap('Sleep'); await ff(2); await p.waitForTimeout(400);
-  lib.report('…also on a 360 px screen', quiet360.pills === tick360.pills && quiet360.display === tick360.display, `${JSON.stringify(quiet360)} vs ${JSON.stringify(tick360)}`);
+  lib.report('…also on a 360 px screen', quiet360.pills === tick360.pills && quiet360.caption === tick360.caption && quiet360.number === tick360.number, `${JSON.stringify(quiet360)} vs ${JSON.stringify(tick360)}`);
   await p.setViewportSize({ width: 412, height: 839 }); await p.waitForTimeout(300);
   await p.locator('ion-tab-button[tab="settings"]').click(); await p.waitForTimeout(400);
 

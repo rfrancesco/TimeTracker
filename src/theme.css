@@ -40,6 +40,7 @@
   font-weight: 500;
 }
 .timer-label ion-icon { font-size: 1.3rem; }
+.timer-label.placeholder { visibility: hidden; }
 .timer-digits {
   font-size: clamp(56px, 18vw, 88px);
   font-weight: 300;
