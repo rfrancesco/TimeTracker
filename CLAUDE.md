@@ -104,13 +104,16 @@ on launch/resume and shows an "App updated" toast.
 ## Plans and open questions
 - **Android wrapper: rfrancesco/TimeTracker-android** (Capacitor; loads this app
   from Pages; CI builds the APK). Ongoing notification, no actions; tapping opens
-  the Timer tab (`openTimer` event). Every timer is a live update (promoted: chip at
-  the far left, top of the lock screen; quiet notifications rank after messaging
-  apps). "Running time" (Settings → Android app; per area `Area.liveUpdates`, missing
-  = on, plus a global switch in `src/runningTime.ts`) decides whether the time ticks
-  (system chronometer) or not (icon-only chip, "Since …"). Say "live updates", not "chip".
+  the Timer tab (`openTimer` event). Two separate per-area settings (`src/runningTime.ts`,
+  stored on the area, missing = on, migrated in v10 from the old `liveUpdates` flag):
+  **Running time** (Settings → Appearance; Off / App only / On; Off = "since 22:45" in
+  the app too; the PWA offers Off / On) and **Live updates** (Settings → Android app;
+  on = promoted: status-bar chip at the far left, top of the lock screen, may hide other
+  icons; off = plain notification, ranked after messaging apps). The chip and the
+  notification share one clock: it ticks only for running time On, else icon only.
+  Say "live updates", not "chip".
   No foreground service. Bridge: `src/native.ts` (no-op in browsers): mirrors the
-  running timer (`promote` always, `showTime` per area), still applies Stops from older APKs (which had a
+  running timer (`promote` = live update, `showTime` = running time On), still applies Stops from older APKs (which had a
   Stop action) via `stopAt` + undo, exports through the native share sheet. Only add
   plugin methods, never change them (older APKs must keep working).
   Later idea: bundle the web app (submodule) and drop INTERNET.

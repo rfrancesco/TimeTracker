@@ -5,7 +5,7 @@ import {
   IonPage, IonReorder, IonReorderGroup, IonSelect, IonSelectOption, IonTitle, IonToolbar, useIonActionSheet, useIonAlert,
   type ReorderEndEventDetail,
 } from '@ionic/react';
-import { add, cloudDownloadOutline, cloudUploadOutline, contrastOutline, refreshOutline, trashOutline } from 'ionicons/icons';
+import { add, cloudDownloadOutline, cloudUploadOutline, contrastOutline, refreshOutline, timerOutline, trashOutline } from 'ionicons/icons';
 import AreaEditor from '../components/AreaEditor';
 import { db, deleteTrackedTime, exportAll, importAll, nowIso, resetEverything } from '../db';
 import { useAreas, useSubAreas, useToast, type AreaView } from '../hooks';
@@ -15,6 +15,8 @@ import { BackupError, parseBackup } from '../backup';
 import { getThemePref, setThemePref, type ThemePref } from '../theme';
 import { inWrapper, native } from '../native';
 import NativeStatusList from '../components/NativeStatusList';
+import { RunningTimeDialog } from '../components/RunningTimeDialog';
+import { areaRunningTime } from '../runningTime';
 
 export default function SettingsPage() {
   const areas = useAreas();
@@ -25,6 +27,9 @@ export default function SettingsPage() {
   const toast = useToast();
   const [presentActionSheet] = useIonActionSheet();
   const [themePref, setThemePrefState] = useState<ThemePref>(getThemePref);
+  const [runningTimeOpen, setRunningTimeOpen] = useState(false);
+  const quieter = areas.filter((a) => areaRunningTime(a) !== 'on').length;
+  const runningTimeSummary = quieter === 0 ? 'All areas' : quieter === 1 ? '1 area quieter' : `${quieter} areas quieter`;
   const intervalCount = useLiveQuery(() => db.intervals.count()) ?? 0;
   const persisted = useLiveQuery(async () => (navigator.storage?.persisted ? navigator.storage.persisted() : false));
 
@@ -227,7 +232,13 @@ export default function SettingsPage() {
               <IonSelectOption value="dark">Dark</IonSelectOption>
             </IonSelect>
           </IonItem>
+          <IonItem button detail onClick={() => setRunningTimeOpen(true)}>
+            <IonIcon slot="start" icon={timerOutline} />
+            <IonLabel>Running time</IonLabel>
+            <IonNote slot="end">{runningTimeSummary}</IonNote>
+          </IonItem>
         </IonList>
+        <RunningTimeDialog open={runningTimeOpen} onClose={() => setRunningTimeOpen(false)} />
 
         <NativeStatusList />
 

@@ -157,53 +157,65 @@ const FAKE_NATIVE = () => {
   const section = p.locator('ion-list', { has: p.locator('ion-list-header', { hasText: 'Android app' }) });
   const rows = async () => (await section.locator('ion-item').allInnerTexts()).map((t) => t.replace(/\s+/g, ' ').trim());
   const r0 = await rows();
-  lib.report('Settings shows the Android app status', r0.includes('Notifications Allowed') && r0.includes('Running time Live updates off') && r0.includes('Timer notification Showing · not promoted'), JSON.stringify(r0));
+  lib.report('Settings shows the Android app status', r0.includes('Notifications Allowed') && r0.includes('Live updates Off in Android') && r0.includes('Timer notification Showing · not promoted'), JSON.stringify(r0));
   await section.locator('ion-item', { hasText: /^Notifications/ }).click(); await p.waitForTimeout(300);
   lib.report('“Notifications” opens the system notification settings', (await calls()).some(([m]) => m === 'openNotificationSettings'));
   await p.screenshot({ path: `${lib.OUT}/native-settings.png` });
 
-  // Running time: every timer is a live update; a global switch and one per area
-  // choose whether its time ticks.
-  const dlg = 'ion-modal.running-time-dialog';
-  const openDialog = async () => { await section.locator('ion-item', { hasText: /^Running time/ }).click(); await p.waitForSelector(`${dlg} ion-title`); await p.waitForTimeout(400); };
-  const closeDialog = async () => { await p.locator(dlg).getByRole('button', { name: 'Close' }).click(); await p.waitForSelector(`${dlg} ion-title`, { state: 'detached' }); await p.waitForTimeout(300); };
-  const toggle = (name) => p.locator(`${dlg} ion-toggle[aria-label="${name}"]`);
-  await openDialog();
-  const areaToggles = await p.locator(`${dlg} .live-area ion-toggle`).evaluateAll((es) => es.map((e) => `${e.getAttribute('aria-label')}:${e.checked ? 'on' : 'off'}`));
-  lib.report('the dialog lists every area, all showing the time by default', areaToggles.length === 12 && areaToggles.every((t) => t.endsWith(':on')) && areaToggles[0].startsWith('Sleep'), areaToggles.join(' '));
-  lib.report('…and says when Android itself has live updates off (with a link)', (await p.locator(`${dlg} ion-item`, { hasText: 'Live updates are off in Android settings' }).count()) === 1);
-  await toggle('Sleep').click(); await p.waitForTimeout(400);
-  const sleepFlag = await p.evaluate(() => new Promise((r) => { const q = indexedDB.open('timetracker'); q.onsuccess = () => { q.result.transaction('areas').objectStore('areas').getAll().onsuccess = (e) => r(e.target.result.find((a) => a.name === 'Sleep').liveUpdates); }; }));
-  lib.report('switching Sleep off is saved on the area (so it travels with backups)', sleepFlag === false, String(sleepFlag));
+  // Two per-area settings: Running time (Appearance: Off / App only / On) and
+  // Live updates (Android app: on/off). A live update ticks only for running time On.
+  const areaFlags = () => p.evaluate(() => new Promise((r) => { const q = indexedDB.open('timetracker'); q.onsuccess = () => { q.result.transaction('areas').objectStore('areas').getAll().onsuccess = (e) => r(Object.fromEntries(e.target.result.map((a) => [a.name, { rt: a.runningTime, lu: a.liveUpdate, legacy: a.liveUpdates }]))); }; }));
+  const lastShow = async () => (await calls()).filter(([m]) => m === 'showTimer').at(-1)?.[1];
+  const openDlg = async (row, cls) => { await p.locator('ion-item', { hasText: new RegExp(`^${row}`) }).first().click(); await p.waitForSelector(`ion-modal.${cls} ion-title`); await p.waitForTimeout(400); };
+  const closeDlg = async (cls) => { await p.locator(`ion-modal.${cls}`).getByRole('button', { name: 'Close' }).click(); await p.waitForSelector(`ion-modal.${cls} ion-title`, { state: 'detached' }); await p.waitForTimeout(300); };
+  const rtChip = (area, label) => p.locator(`ion-modal.running-time-dialog [aria-label="${area} running time"] ion-chip`, { hasText: new RegExp(`^${label}$`) });
+
+  // Running time dialog: three chips per area in the Android app, all On by default.
+  await openDlg('Running time', 'running-time-dialog');
+  const rtState = await p.locator('ion-modal.running-time-dialog .running-time-chips').evaluateAll((es) => es.map((e) => [...e.querySelectorAll('ion-chip')].map((c) => (c.outline ? c.textContent : `[${c.textContent}]`)).join('|')));
+  lib.report('Running time: Off · App only · On per area, On by default', rtState.length === 12 && rtState.every((x) => x === 'Off|App only|[On]'), rtState[0]);
+  await rtChip('Sleep', 'Off').click(); await p.waitForTimeout(300);
+  await rtChip('Work', 'App only').click(); await p.waitForTimeout(300);
+  const sel = await rtChip('Sleep', 'Off').evaluate((c) => ({ bg: c.style.getPropertyValue('--background'), selected: !c.outline, dot: c.closest('ion-item').querySelector('.dot').style.background }));
+  const toRgb = (hex) => `rgb(${parseInt(hex.slice(1, 3), 16)}, ${parseInt(hex.slice(3, 5), 16)}, ${parseInt(hex.slice(5, 7), 16)})`;
+  lib.report('…the selected chip is filled with the area colour (as displayed)', sel.selected && toRgb(sel.bg) === sel.dot, JSON.stringify(sel));
   await p.screenshot({ path: `${lib.OUT}/native-running-time-dialog.png` });
-  await closeDialog();
-  // With Android allowing live updates, the row sums up the per-area choice.
+  await closeDlg('running-time-dialog');
+  let f = await areaFlags();
+  lib.report('saved on the areas (Sleep off, Work app only)', f.Sleep.rt === 'off' && f.Work.rt === 'app' && f.Home.rt === undefined, JSON.stringify([f.Sleep, f.Work]));
+  lib.report('the Settings row sums it up', (await p.locator('ion-item', { hasText: /^Running time/ }).innerText()).includes('2 areas quieter'));
+
+  // Live updates dialog: one switch per area.
+  await openDlg('Live updates', 'live-updates-dialog');
+  const luCount = await p.locator('ion-modal.live-updates-dialog ion-toggle').count();
+  lib.report('Live updates: a switch per area, all on', luCount === 12 && (await p.locator('ion-modal.live-updates-dialog ion-toggle').evaluateAll((es) => es.every((e) => e.checked))));
+  await p.locator('ion-modal.live-updates-dialog ion-toggle[aria-label="Work"]').click(); await p.waitForTimeout(300);
+  await p.locator('ion-modal.live-updates-dialog ion-toggle[aria-label="Reading"]').click(); await p.waitForTimeout(300);
+  await p.screenshot({ path: `${lib.OUT}/native-live-updates-dialog.png` });
+  await closeDlg('live-updates-dialog');
+  f = await areaFlags();
   await p.evaluate(() => { window.__liveAllowed = true; });
   await p.locator('ion-tab-button[tab="timer"]').click(); await p.waitForTimeout(300);
   await p.locator('ion-tab-button[tab="settings"]').click(); await p.waitForTimeout(500);
-  lib.report('the Settings row sums up the choice: “11 of 12 areas”', (await rows()).includes('Running time 11 of 12 areas'), JSON.stringify(await rows()));
+  lib.report('the Live updates row sums it up: “10 of 12 areas”', (await rows()).includes('Live updates 10 of 12 areas'), JSON.stringify(await rows()));
+  lib.report('saved on the areas (Work, Reading: live update off)', f.Work.lu === false && f.Reading.lu === false && f.Sleep.lu === undefined, JSON.stringify([f.Work, f.Reading]));
 
-  // Sleep → quiet notification (promote: false); Reading → live update.
-  const lastShow = async () => (await calls()).filter(([m]) => m === 'showTimer').at(-1)?.[1];
+  // What reaches the notification, per area.
   await p.locator('ion-tab-button[tab="timer"]').click(); await p.waitForTimeout(400);
-  await tap('Sleep'); await p.waitForTimeout(300);
-  const sleepShow = await lastShow();
-  lib.report('Sleep without the time → still a live update, no ticking (promote: true, showTime: false)', sleepShow?.title === 'Sleep' && sleepShow.promote === true && sleepShow.showTime === false, j(sleepShow));
-  await tap('Reading'); await p.waitForTimeout(300);
-  const readShow = await lastShow();
-  lib.report('Reading → live update with the running time', readShow?.title === 'Reading' && readShow.promote === true && readShow.showTime === true, j(readShow));
-
-  // Global switch off → quiet for every area.
+  const run = async (name) => { await tap(name); await ff(2); await p.waitForTimeout(300); return lastShow(); };
+  const sl = await run('Sleep');
+  lib.report('Sleep (time off, live update on) → icon-only live update', sl?.title === 'Sleep' && sl.promote === true && sl.showTime === false, j(sl));
+  const quiet = { digits: await p.locator('.timer-digits').innerText(), tab: await p.locator('ion-tab-button[tab="timer"]').innerText(), today: await p.locator('.today-row', { hasText: 'Sleep' }).innerText() };
+  lib.report('…and no ticking time in the app: “since …” on the Timer, “Timer” in the tab, Today', /^since /.test(quiet.digits) && /^Timer$/i.test(quiet.tab.trim()) && /since /.test(quiet.today), JSON.stringify(quiet));
+  await p.screenshot({ path: `${lib.OUT}/native-quiet-timer.png` });
+  const wk = await run('Work');
+  lib.report('Work (app only, live update off) → plain notification, no ticking', wk?.title === 'Work' && wk.promote === false && wk.showTime === false, j(wk));
+  lib.report('…but the app ticks', /^\d+:\d\d:\d\d$/.test(await p.locator('.timer-digits').innerText()), await p.locator('.timer-digits').innerText());
+  const rd = await run('Reading');
+  lib.report('Reading (time on, live update off) → plain notification that ticks', rd?.title === 'Reading' && rd.promote === false && rd.showTime === true, j(rd));
+  const gt = await run('Guitar');
+  lib.report('Guitar (defaults) → live update that ticks', gt?.title === 'Guitar' && gt.promote === true && gt.showTime === true, j(gt));
   await p.locator('ion-tab-button[tab="settings"]').click(); await p.waitForTimeout(400);
-  await openDialog();
-  await toggle('Show the running time').click(); await p.waitForTimeout(400);
-  const disabled = await p.locator(`${dlg} .live-area`).evaluateAll((es) => es.every((e) => e.disabled));
-  lib.report('global switch off greys out the areas', disabled);
-  const offShow = await lastShow();
-  lib.report('…and the running timer stops ticking (still a live update)', offShow?.title === 'Reading' && offShow.promote === true && offShow.showTime === false, j(offShow));
-  await toggle('Show the running time').click(); await p.waitForTimeout(400);
-  lib.report('back on → the time ticks again, Sleep still off', (await lastShow()).showTime === true && !(await toggle('Sleep').evaluate((e) => e.checked)));
-  await closeDialog();
 
   // Tapping the notification (app already open) switches to the Timer tab.
   await p.evaluate(() => window.__openTimer()); await p.waitForTimeout(600);
@@ -237,6 +249,16 @@ const FAKE_NATIVE = () => {
   await plain.locator('ion-tab-button[tab="settings"]').click(); await plain.waitForTimeout(500);
   const storedPwa = await plain.locator('ion-item', { hasText: 'Stored on this device' }).innerText();
   lib.report('PWA: the storage note is still there', /may be cleared by the browser|protected from cleanup/.test(storedPwa), storedPwa.replace(/\s+/g, ' '));
+  // PWA: Running time without "App only" (no notification), and Off still quiets the Timer.
+  await plain.locator('ion-item', { hasText: /^Running time/ }).click(); await plain.waitForSelector('ion-modal.running-time-dialog ion-title'); await plain.waitForTimeout(400);
+  const pwaChips = await plain.locator('ion-modal.running-time-dialog [aria-label="Guitar running time"] ion-chip').allInnerTexts();
+  lib.report('PWA: running time offers Off · On only', pwaChips.join('|') === 'Off|On', pwaChips.join('|'));
+  await plain.locator('ion-modal.running-time-dialog [aria-label="Guitar running time"] ion-chip', { hasText: /^Off$/ }).click(); await plain.waitForTimeout(300);
+  await plain.locator('ion-modal.running-time-dialog').getByRole('button', { name: 'Close' }).click(); await plain.waitForTimeout(400);
+  await plain.locator('ion-tab-button[tab="timer"]').click(); await plain.waitForTimeout(300);
+  await plain.locator('.timer-layout .area-pill-btn[aria-label="Guitar"]').click(); await plain.waitForTimeout(500);
+  lib.report('PWA: running time Off → “since …” instead of digits', /^since /.test(await plain.locator('.timer-digits').innerText()), await plain.locator('.timer-digits').innerText());
+  await plain.locator('ion-tab-button[tab="settings"]').click(); await plain.waitForTimeout(400);
   lib.report('browser/PWA: no Android section', (await plain.locator('ion-list-header', { hasText: 'Android app' }).count()) === 0);
 
   lib.report('no page errors', errs.length === 0, errs.join(' | '));

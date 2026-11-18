@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import { IonItem, IonLabel, IonList, IonListHeader, IonNote, useIonViewWillEnter } from '@ionic/react';
 import { inWrapper, lastBridgeError, native, type NativeStatus } from '../native';
 import { useActive, useAreas } from '../hooks';
-import { areaShowsTime, useShowTimeEnabled } from '../runningTime';
-import RunningTimeDialog from './RunningTimeDialog';
+import { areaLiveUpdate, areaRunningTime } from '../runningTime';
+import { LiveUpdatesDialog } from './RunningTimeDialog';
 
 /**
  * Settings → Android app (only inside the wrapper): what the system allows and
@@ -15,10 +15,9 @@ export default function NativeStatusList() {
   const [dialog, setDialog] = useState(false);
   const areas = useAreas();
   const active = useActive();
-  const enabled = useShowTimeEnabled();
-  const withLive = areas.filter(areaShowsTime).length;
+  const withLive = areas.filter(areaLiveUpdate).length;
   const activeArea = areas.find((a) => a.id === active?.areaId);
-  const quietNow = !enabled || (activeArea && !areaShowsTime(activeArea));
+  const quietNow = activeArea && areaRunningTime(activeArea) !== 'on';
 
   const load = () =>
     native?.status().then(
@@ -45,7 +44,7 @@ export default function NativeStatusList() {
     : !s.posted
       ? 'Not showing'
       : s.promoted
-        ? `Showing · live update${quietNow ? ', no time' : ''}`
+        ? `Showing · live update${quietNow ? ', icon only' : ''}`
         : s.promotable === false
           ? 'Showing · doesn’t qualify as a Live Update'
           : 'Showing · not promoted';
@@ -68,15 +67,15 @@ export default function NativeStatusList() {
               <IonNote slot="end">{s.notificationsEnabled ? 'Allowed' : 'Off'}</IonNote>
             </IonItem>
             <IonItem button detail onClick={() => setDialog(true)}>
-              <IonLabel>Running time</IonLabel>
+              <IonLabel>Live updates</IonLabel>
               <IonNote slot="end">
                 {s.liveUpdatesAllowed === false
-                  ? 'Live updates off'
-                  : !enabled
-                      ? 'Off'
-                      : withLive === areas.length
-                        ? 'All areas'
-                        : `${withLive} of ${areas.length} areas`}
+                  ? 'Off in Android'
+                  : withLive === 0
+                    ? 'Off'
+                    : withLive === areas.length
+                      ? 'All areas'
+                      : `${withLive} of ${areas.length} areas`}
               </IonNote>
             </IonItem>
             <IonItem>
@@ -93,7 +92,7 @@ export default function NativeStatusList() {
           </IonLabel>
         </IonItem>
       )}
-      <RunningTimeDialog
+      <LiveUpdatesDialog
         open={dialog}
         onClose={() => setDialog(false)}
         systemAllowed={s?.liveUpdatesAllowed}

@@ -14,6 +14,7 @@ import { discardActive, formatDuration, restartAt, startAt, stopAt, switchAt, tr
 import { recordTimerAction, redo, undo, useUndoRedo } from '../undo';
 import { iconFor } from '../icons';
 import { startOfLocalDay } from '../time';
+import { ticksInApp } from '../runningTime';
 
 const haptic = () => navigator.vibrate?.(12);
 
@@ -24,7 +25,7 @@ export default function TimerPage() {
   const subAreas = useSubAreas();
   const active = useActive();
   // Tick every second while tracking, every minute otherwise (keeps "today" correct past midnight).
-  const now = useNow(active ? 1000 : 60_000);
+  const now = useNow(active && ticksInApp(allAreas.find((a) => a.id === active.areaId)) ? 1000 : 60_000);
 
   const activeArea = allAreas.find((a) => a.id === active?.areaId);
   const dark = useDarkMode();
@@ -133,6 +134,8 @@ export default function TimerPage() {
   }
   const subsOfActive = subAreas.filter((s) => s.areaId === active?.areaId && !s.archived);
   const elapsed = active ? now - new Date(active.start).getTime() : 0;
+  const ticking = ticksInApp(activeArea);
+  const sinceText = active ? new Date(active.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
 
 
   // Today's totals (finished intervals + running one).
@@ -197,10 +200,15 @@ export default function TimerPage() {
                     {activeSub ? ` · ${activeSub.name}` : ''}
                   </span>
                 </div>
-                <div className="timer-digits">{formatDuration(elapsed)}</div>
-                <div className="timer-since">
-                  since {new Date(active.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </div>
+                {ticking ? (
+                  <>
+                    <div className="timer-digits">{formatDuration(elapsed)}</div>
+                    <div className="timer-since">since {sinceText}</div>
+                  </>
+                ) : (
+                  // Running time off for this area (e.g. Sleep): no ticking time.
+                  <div className="timer-digits quiet">since {sinceText}</div>
+                )}
               </>
             ) : (
               <>
@@ -328,7 +336,9 @@ export default function TimerPage() {
                       <IonIcon icon={iconFor(a.icon)} />
                     </span>
                     <span className="name">{a.name}</span>
-                    <span className="dur">{formatDuration(ms, false)}</span>
+                    <span className="dur">
+                      {areaId === active?.areaId && !ticking ? `since ${sinceText}` : formatDuration(ms, false)}
+                    </span>
                   </div>
                 );
               })}

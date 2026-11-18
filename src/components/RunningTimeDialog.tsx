@@ -1,91 +1,138 @@
-import { Fragment } from 'react';
+import { Fragment, type ReactNode } from 'react';
 import {
-  IonButton, IonButtons, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonList, IonListHeader, IonModal, IonNote,
+  IonButton, IonButtons, IonChip, IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonList, IonModal, IonNote,
   IonTitle, IonToggle, IonToolbar,
 } from '@ionic/react';
 import { close } from 'ionicons/icons';
-import { db, nowIso } from '../db';
-import { useAreas } from '../hooks';
+import { db, nowIso, type RunningTime } from '../db';
+import { useAreas, type AreaView } from '../hooks';
 import { iconFor } from '../icons';
-import { areaShowsTime, setShowTimeEnabled, useShowTimeEnabled } from '../runningTime';
+import { inWrapper } from '../native';
+import { areaLiveUpdate, areaRunningTime } from '../runningTime';
 
-interface Props {
+/** A full-screen list of areas (in their rows) with one control each. */
+function AreaSettingsDialog(props: {
   open: boolean;
   onClose: () => void;
-  /** Android's own Live updates permission for the app (undefined: not on this Android). */
-  systemAllowed?: boolean;
-  onOpenSystemSettings: () => void;
-}
-
-/**
- * Settings → Android app → Running time: every timer is a live update; this chooses,
- * globally and per area, whether its running time ticks (status bar, lock screen,
- * notification). Without it: icon-only chip and "Since …" — e.g. for Sleep.
- */
-export default function RunningTimeDialog({ open, onClose, systemAllowed, onOpenSystemSettings }: Props) {
+  title: string;
+  className: string;
+  intro: ReactNode;
+  top?: ReactNode;
+  control: (a: AreaView) => ReactNode;
+}) {
   const areas = useAreas();
-  const enabled = useShowTimeEnabled();
-  const setArea = (id: string, on: boolean) => db.areas.update(id, { liveUpdates: on, updatedAt: nowIso() });
-
   return (
-    <IonModal isOpen={open} onDidDismiss={onClose} className="running-time-dialog">
+    <IonModal isOpen={props.open} onDidDismiss={props.onClose} className={`area-settings-dialog ${props.className}`}>
       <IonHeader>
         <IonToolbar>
           <IonButtons slot="start">
-            <IonButton onClick={onClose} aria-label="Close">
+            <IonButton onClick={props.onClose} aria-label="Close">
               <IonIcon slot="icon-only" icon={close} />
             </IonButton>
           </IonButtons>
-          <IonTitle>Running time</IonTitle>
+          <IonTitle>{props.title}</IonTitle>
         </IonToolbar>
       </IonHeader>
       <IonContent>
-        {systemAllowed === false && (
-          <IonList>
-            <IonItem button detail onClick={onOpenSystemSettings} lines="none">
-              <IonLabel className="ion-text-wrap">
-                <h3>Live updates are off in Android settings</h3>
-                <p>Allow them for Tracker to see the timer in the status bar.</p>
-              </IonLabel>
-            </IonItem>
-          </IonList>
-        )}
+        {props.top}
+        <IonNote className="area-settings-intro">{props.intro}</IonNote>
         <IonList>
-          <IonItem lines="none">
-            <IonToggle checked={enabled} onIonChange={(e) => setShowTimeEnabled(e.detail.checked)} aria-label="Show the running time">
-              <IonLabel className="ion-text-wrap">
-                <h2>Show the running time</h2>
-                <p>Ticking in the status bar and on the lock screen</p>
-              </IonLabel>
-            </IonToggle>
-          </IonItem>
-        </IonList>
-        <IonList>
-          <IonListHeader>
-            <IonLabel>Areas showing the time</IonLabel>
-          </IonListHeader>
           {areas.map((a) => (
             <Fragment key={a.id}>
-              <IonItem disabled={!enabled} lines={a.breakAfter ? 'none' : 'inset'} className="live-area">
+              <IonItem lines={a.breakAfter ? 'none' : 'inset'} className="area-setting">
                 <span slot="start" className="dot" style={{ background: a.color, color: a.onColor }}>
                   <IonIcon icon={iconFor(a.icon)} />
                 </span>
-                <IonToggle
-                  checked={areaShowsTime(a)}
-                  onIonChange={(e) => setArea(a.id, e.detail.checked)}
-                  aria-label={a.name}
-                >
-                  {a.name}
-                </IonToggle>
+                {props.control(a)}
               </IonItem>
-              {a.breakAfter && <div className="live-row-gap" />}
+              {a.breakAfter && <div className="area-row-gap" />}
             </Fragment>
           ))}
         </IonList>
-        <IonNote className="live-note">
-          Other areas still show their live update (icon in the status bar), without the ticking time.
-        </IonNote>
       </IonContent>
     </IonModal>
+  );
+}
+
+const save = (id: string, patch: { runningTime?: RunningTime; liveUpdate?: boolean }) =>
+  db.areas.update(id, { ...patch, updatedAt: nowIso() });
+
+/**
+ * Settings → Appearance → Running time: per area, where the time ticks. Off: "since
+ * 22:45" instead (e.g. Sleep). App only (Android app): ticking in the app, not in the
+ * notification. In the browser there is no notification, so App only isn't offered.
+ */
+export function RunningTimeDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const choices: Array<[RunningTime, string]> = inWrapper ? [['off', 'Off'], ['app', 'App only'], ['on', 'On']] : [['off', 'Off'], ['on', 'On']];
+  return (
+    <AreaSettingsDialog
+      open={open}
+      onClose={onClose}
+      title="Running time"
+      className="running-time-dialog"
+      intro={
+        inWrapper
+          ? 'Off: “since 22:45” instead of a ticking time. App only: ticking in the app, not in the notification.'
+          : 'Off: “since 22:45” instead of a ticking time.'
+      }
+      control={(a) => {
+        // In the browser "app only" is the same as "on".
+        const value = inWrapper ? areaRunningTime(a) : areaRunningTime(a) === 'off' ? 'off' : 'on';
+        return (
+          <>
+            <IonLabel>{a.name}</IonLabel>
+            <div slot="end" className="running-time-chips" role="radiogroup" aria-label={`${a.name} running time`}>
+              {choices.map(([v, label]) => (
+                <IonChip
+                  key={v}
+                  role="radio"
+                  aria-checked={value === v}
+                  outline={value !== v}
+                  style={value === v ? { ['--background' as string]: a.color, ['--color' as string]: a.onColor } : undefined}
+                  onClick={() => save(a.id, { runningTime: v })}
+                >
+                  <IonLabel>{label}</IonLabel>
+                </IonChip>
+              ))}
+            </div>
+          </>
+        );
+      }}
+    />
+  );
+}
+
+/** Settings → Android app → Live updates: per area, a live update or a plain notification. */
+export function LiveUpdatesDialog(props: {
+  open: boolean;
+  onClose: () => void;
+  systemAllowed?: boolean;
+  onOpenSystemSettings: () => void;
+}) {
+  return (
+    <AreaSettingsDialog
+      open={props.open}
+      onClose={props.onClose}
+      title="Live updates"
+      className="live-updates-dialog"
+      top={
+        props.systemAllowed === false && (
+          <IonList>
+            <IonItem button detail onClick={props.onOpenSystemSettings} lines="none">
+              <IonLabel className="ion-text-wrap">
+                <h3>Live updates are off in Android settings</h3>
+                <p>Every timer shows as a plain notification.</p>
+              </IonLabel>
+            </IonItem>
+          </IonList>
+        )
+      }
+      intro="The timer at the far left of the status bar and on top of the lock screen (other icons may be hidden). It ticks if the area’s running time is On, else it shows just the icon. Off: a plain notification."
+      control={(a) => (
+        <IonToggle checked={areaLiveUpdate(a)} onIonChange={(e) => save(a.id, { liveUpdate: e.detail.checked })} aria-label={a.name}>
+          {a.name}
+        </IonToggle>
+      )}
+    />
   );
 }

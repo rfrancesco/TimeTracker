@@ -15,6 +15,7 @@ import { BACKGROUND_TINT, themeBackground, tintOverBackground } from './color';
 import { formatHex, parse } from 'culori';
 import { formatDuration } from './timer';
 import { NativeTimerSync } from './native';
+import { ticksInApp } from './runningTime';
 
 import '@ionic/react/css/core.css';
 import '@ionic/react/css/normalize.css';
@@ -29,11 +30,13 @@ import './theme.css';
 // Ionic picks 'md' (Material) on Android and 'ios' on iPhone automatically.
 setupIonicReact();
 
-/** Timer tab label: the elapsed time while tracking, "Timer" otherwise. */
+/** Timer tab label: the elapsed time while tracking (unless the area's running time is off), else "Timer". */
 function TimerTabLabel() {
   const active = useActive();
-  const now = useNow(1000, !!active);
-  return <IonLabel>{active ? formatDuration(now - new Date(active.start).getTime()) : 'Timer'}</IonLabel>;
+  const area = useAreas(true).find((a) => a.id === active?.areaId);
+  const ticking = !!active && ticksInApp(area);
+  const now = useNow(1000, ticking);
+  return <IonLabel>{ticking ? formatDuration(now - new Date(active!.start).getTime()) : 'Timer'}</IonLabel>;
 }
 
 /**

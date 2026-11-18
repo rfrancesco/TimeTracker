@@ -123,6 +123,7 @@ fs.mkdirSync(`${lib.OUT}/bk`, { recursive: true });
     'backup from a newer app version': JSON.stringify({ ...exported, format: 99 }),
     'area with broken colour': JSON.stringify({ ...exported, areas: exported.areas.map((a, i) => i ? a : { ...a, color: 'blue' }) }),
     'area with a broken live updates setting': JSON.stringify({ ...exported, areas: exported.areas.map((a, i) => i ? a : { ...a, liveUpdates: 'no' }) }),
+    'area with a broken running time setting': JSON.stringify({ ...exported, areas: exported.areas.map((a, i) => i ? a : { ...a, runningTime: 'sometimes' }) }),
   };
   for (const [label, content] of Object.entries(bad)) {
     const f = `${S}/bk/bad-${label.replace(/\W+/g, '-')}.json`; fs.writeFileSync(f, content);
@@ -138,6 +139,14 @@ fs.mkdirSync(`${lib.OUT}/bk`, { recursive: true });
   const rl = await importFile(pb, `${S}/bk/legacy.json`);
   const ld = await dump(pb);
   check('older-format backup still restores', /^Backup restored/.test(rl.toast || '') && ld.intervals.length === exported.intervals.length && ld.areas.length === exported.areas.length, rl.failed || rl.toast);
+
+  // ---------- 6c. Backup with the pre-v10 live updates flag ----------
+  const legacyLive = { ...exported, areas: exported.areas.map((a, i) => (i === 0 ? { ...a, liveUpdates: false } : i === 1 ? { ...a, liveUpdates: true } : a)) };
+  fs.writeFileSync(`${S}/bk/legacy-live.json`, JSON.stringify(legacyLive));
+  const rlv = await importFile(pb, `${S}/bk/legacy-live.json`);
+  const lv = (await dump(pb)).areas;
+  const a0 = lv.find((a) => a.id === exported.areas[0].id), a1 = lv.find((a) => a.id === exported.areas[1].id);
+  check('older backup: “live update without the time” becomes running time App only (same behaviour)', !rlv.failed && a0.runningTime === 'app' && !('liveUpdates' in a0) && a0.liveUpdate === undefined && a1.runningTime === undefined && !('liveUpdates' in a1), JSON.stringify([a0.runningTime, a0.liveUpdates, a1.runningTime, a1.liveUpdates]));
 
   // ---------- 7. Large: ~3 years of tracking ----------
   const big = { ...exported, intervals: [] };

@@ -8,6 +8,8 @@ import { BACKUP_APP, BACKUP_FORMAT, type Backup } from './backup';
  * and every record has a client-generated UUID + updatedAt, so a future REST
  * backend can sync these tables without any migration.
  */
+export type RunningTime = 'off' | 'app' | 'on';
+
 export interface Area {
   id: string;
   name: string;
@@ -17,7 +19,11 @@ export interface Area {
   /** Start a new row in the area selector after this area. */
   breakAfter?: boolean;
   archived?: boolean;
-  /** Android app: the live update shows this area's running time (missing = yes). */
+  /** Where the running time ticks: off ("since …"), app only, or also in the notification. Missing = on. */
+  runningTime?: RunningTime;
+  /** Android app: show this area's timer as a live update (status bar, lock screen). Missing = yes. */
+  liveUpdate?: boolean;
+  /** Legacy (until v10): false meant "live update without the time". Converted by upgradeAreaSettings. */
   liveUpdates?: boolean;
   updatedAt: string;
 }
@@ -221,7 +227,22 @@ class TrackerDB extends Dexie {
         if (r && a.color.toUpperCase() === r[0]) await areas.update(a.id, { color: r[1], updatedAt: nowIso() });
       }
     });
+    // v10: running time and live updates become two separate per-area settings. The
+    // old flag (liveUpdates: false = a live update without the time) becomes running
+    // time "app only" with the live update kept on: exactly the same behaviour.
+    this.version(10).upgrade(async (tx) => {
+      await tx.table('areas').toCollection().modify((a: Area) => {
+        upgradeAreaSettings(a);
+      });
+    });
   }
+}
+
+/** Convert the pre-v10 `liveUpdates` flag (also in older backups). Mutates and returns `a`. */
+export function upgradeAreaSettings<T extends Area>(a: T): T {
+  if (a.liveUpdates === false && a.runningTime === undefined) a.runningTime = 'app';
+  delete a.liveUpdates;
+  return a;
 }
 
 export const db = new TrackerDB();
@@ -325,7 +346,7 @@ export async function importAll(data: Backup) {
   const fixed = normalize(data.intervals, data.active?.[0], Date.now());
   await db.transaction('rw', [db.areas, db.subAreas, db.intervals, db.active], async () => {
     await Promise.all([db.areas.clear(), db.subAreas.clear(), db.intervals.clear(), db.active.clear()]);
-    await db.areas.bulkAdd(data.areas);
+    await db.areas.bulkAdd(data.areas.map((a) => upgradeAreaSettings({ ...a })));
     await db.subAreas.bulkAdd(data.subAreas);
     await db.intervals.bulkAdd(fixed.intervals);
     if (fixed.active) await db.active.put(fixed.active);

@@ -671,8 +671,11 @@ ion-tabs .ion-page:not(.ion-page-hidden) {
 .stop-button.area-hold { opacity: 1; }
 .stop-button.area-hold::part(native) { opacity: 1; }
 
-/* Settings → Android app → Running time */
-.live-area .dot { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-size: 16px; }
-.live-row-gap { height: 10px; }
-.live-note { display: block; padding: 8px 16px 24px; font-size: 13px; line-height: 1.4; }
-.running-time-dialog ion-toggle::part(label) { white-space: normal; }
+/* Settings → Running time / Live updates: one control per area */
+.area-setting .dot { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-size: 16px; }
+.area-row-gap { height: 10px; }
+.area-settings-intro { display: block; padding: 14px 16px 6px; font-size: 13px; line-height: 1.4; }
+.running-time-chips { display: flex; }
+.running-time-chips ion-chip { margin: 2px; padding: 0 9px; height: 28px; font-size: 12.5px; }
+/* Running time off (e.g. Sleep): "since 22:45" instead of ticking digits. */
+.timer-digits.quiet { font-size: clamp(36px, 11vw, 56px); letter-spacing: 0; }
