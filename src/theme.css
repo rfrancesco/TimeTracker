@@ -24,7 +24,9 @@
 .timer-display {
   text-align: center;
   padding: 24px 0 8px;
-  min-height: 170px;
+  /* Fits the tallest state (name + caption + digits, which scale with the screen), so
+     idle, ticking and quiet share one height and nothing below ever moves. */
+  min-height: max(170px, calc(96px + 1.1 * clamp(56px, 18vw, 88px)));
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -677,19 +679,6 @@ ion-tabs .ion-page:not(.ion-page-hidden) {
 .area-settings-intro { display: block; padding: 14px 16px 6px; font-size: 13px; line-height: 1.4; }
 .running-time-chips { display: flex; }
 .running-time-chips ion-chip { margin: 2px; padding: 0 9px; height: 28px; font-size: 12.5px; }
-/* Running time off (e.g. Sleep): a muted "SINCE / 22:45" over an invisible copy of
-   the ticking digits + caption, so the layout is identical to a ticking area. */
-.timer-face { position: relative; }
-.timer-face.quiet > .timer-digits,
-.timer-face.quiet > .timer-since { visibility: hidden; }
-.timer-quiet {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  color: var(--ion-color-step-600, var(--ion-text-color-step-400, #888));
-}
-.timer-quiet-label { font-size: 15px; letter-spacing: 0.08em; text-transform: uppercase; }
-.timer-quiet-time { font-size: clamp(36px, 11vw, 48px); font-weight: 300; font-variant-numeric: tabular-nums; line-height: 1.15; }
+/* Caption above the big number (all states); muted like the idle/quiet number. */
+.timer-caption { font-size: 17px; margin-top: 10px; color: var(--ion-color-step-600, var(--ion-text-color-step-400, #888)); }
+.timer-digits.quiet { color: var(--ion-color-step-600, var(--ion-text-color-step-400, #888)); }

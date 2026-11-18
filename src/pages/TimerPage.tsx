@@ -200,23 +200,15 @@ export default function TimerPage() {
                     {activeSub ? ` · ${activeSub.name}` : ''}
                   </span>
                 </div>
-                {/* Running time off (e.g. Sleep): a calm "SINCE 22:45" instead of the ticking
-                    digits, drawn over an invisible copy of them so nothing else moves. */}
-                <div className={`timer-face${ticking ? '' : ' quiet'}`}>
-                  <div className="timer-digits" aria-hidden={!ticking}>{ticking ? formatDuration(elapsed) : '0:00:00'}</div>
-                  <div className="timer-since" aria-hidden={!ticking}>since {sinceText}</div>
-                  {!ticking && (
-                    <div className="timer-quiet">
-                      <span className="timer-quiet-label">since</span>
-                      <span className="timer-quiet-time">{sinceText}</span>
-                    </div>
-                  )}
-                </div>
+                {/* One structure for every state: a caption above one big number. Running
+                    time off (e.g. Sleep): the start time, muted, instead of the ticking digits. */}
+                <div className="timer-caption">{ticking ? `Started at ${sinceText}` : 'Started at'}</div>
+                <div className={`timer-digits${ticking ? '' : ' quiet'}`}>{ticking ? formatDuration(elapsed) : sinceText}</div>
               </>
             ) : (
               <>
+                <div className="timer-caption">Tap an area to start</div>
                 <div className="timer-digits idle">0:00:00</div>
-                <div className="timer-since">Tap an area to start tracking</div>
               </>
             )}
           </section>

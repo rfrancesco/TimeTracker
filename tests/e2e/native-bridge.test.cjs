@@ -205,9 +205,9 @@ const FAKE_NATIVE = () => {
   const run = async (name) => { await tap(name); await ff(2); await p.waitForTimeout(300); return lastShow(); };
   const sl = await run('Sleep');
   lib.report('Sleep (time off, live update on) → icon-only live update', sl?.title === 'Sleep' && sl.promote === true && sl.showTime === false, j(sl));
-  const quiet = { face: await p.locator('.timer-quiet').innerText(), tab: await p.locator('ion-tab-button[tab="timer"]').innerText(), today: await p.locator('.today-row', { hasText: 'Sleep' }).innerText() };
+  const quiet = { caption: await p.locator('.timer-caption').innerText(), number: await p.locator('.timer-digits').innerText(), muted: await p.locator('.timer-digits').evaluate((e) => e.classList.contains('quiet')), tab: await p.locator('ion-tab-button[tab="timer"]').innerText(), today: await p.locator('.today-row', { hasText: 'Sleep' }).innerText() };
   const startHm = await p.evaluate(() => new Promise((r) => { const q = indexedDB.open('timetracker'); q.onsuccess = () => { q.result.transaction('active').objectStore('active').get('current').onsuccess = (e) => r(new Date(e.target.result.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })); }; }));
-  lib.report('…and in the app: a calm “SINCE <start>” instead of the digits, the start time in the tab', quiet.face.replace(/\s+/g, ' ').trim().toUpperCase() === `SINCE ${startHm}`.toUpperCase() && quiet.tab.trim() === startHm, JSON.stringify(quiet));
+  lib.report('…and in the app: “Started at” over the muted start time; the start time in the tab', quiet.caption.trim() === 'Started at' && quiet.number.trim() === startHm && quiet.muted && quiet.tab.trim() === startHm, JSON.stringify(quiet));
   lib.report('…while Today keeps the real total', /\d+m$/.test(quiet.today.replace(/\s+/g, ' ').trim()) && !/since/i.test(quiet.today), quiet.today.replace(/\s+/g, ' '));
   // Nothing else moves between a quiet and a ticking area (at two screen widths).
   const layout = async () => p.evaluate(() => ({ pills: Math.round(document.querySelector('.area-pills').getBoundingClientRect().top), display: Math.round(document.querySelector('.timer-display').getBoundingClientRect().height) }));
@@ -221,11 +221,16 @@ const FAKE_NATIVE = () => {
   const gt = await run('Guitar');
   lib.report('Guitar (defaults) → live update that ticks', gt?.title === 'Guitar' && gt.promote === true && gt.showTime === true, j(gt));
   const tickL = await layout();
+  lib.report('ticking: “Started at <time>” above the digits', /^Started at \d\d:\d\d/.test((await p.locator('.timer-caption').innerText()).trim()), await p.locator('.timer-caption').innerText());
   lib.report('quiet and ticking areas share one layout (area buttons don’t move)', quietL.pills === tickL.pills && quietL.display === tickL.display, `${JSON.stringify(quietL)} vs ${JSON.stringify(tickL)}`);
   await p.setViewportSize({ width: 360, height: 760 }); await p.waitForTimeout(300);
   const tick360 = await layout();
   await tap('Sleep'); await ff(2); await p.waitForTimeout(400);
   const quiet360 = await layout();
+  await p.locator('.stop-button').click(); await p.waitForTimeout(500);
+  const idle360 = await layout();
+  lib.report('idle: “Tap an area to start”, same layout too', (await p.locator('.timer-caption').innerText()).trim() === 'Tap an area to start' && idle360.pills === tick360.pills, `${JSON.stringify(idle360)} vs ${JSON.stringify(tick360)}`);
+  await tap('Sleep'); await ff(2); await p.waitForTimeout(400);
   lib.report('…also on a 360 px screen', quiet360.pills === tick360.pills && quiet360.display === tick360.display, `${JSON.stringify(quiet360)} vs ${JSON.stringify(tick360)}`);
   await p.setViewportSize({ width: 412, height: 839 }); await p.waitForTimeout(300);
   await p.locator('ion-tab-button[tab="settings"]').click(); await p.waitForTimeout(400);
@@ -270,7 +275,7 @@ const FAKE_NATIVE = () => {
   await plain.locator('ion-modal.running-time-dialog').getByRole('button', { name: 'Close' }).click(); await plain.waitForTimeout(400);
   await plain.locator('ion-tab-button[tab="timer"]').click(); await plain.waitForTimeout(300);
   await plain.locator('.timer-layout .area-pill-btn[aria-label="Guitar"]').click(); await plain.waitForTimeout(500);
-  lib.report('PWA: running time Off → “SINCE …” instead of digits', /^since/i.test((await plain.locator('.timer-quiet').innerText()).trim()), await plain.locator('.timer-quiet').innerText());
+  lib.report('PWA: running time Off → “Started at” over the start time', (await plain.locator('.timer-caption').innerText()).trim() === 'Started at' && /^\d\d:\d\d/.test((await plain.locator('.timer-digits').innerText()).trim()), await plain.locator('.timer-digits').innerText());
   await plain.locator('ion-tab-button[tab="settings"]').click(); await plain.waitForTimeout(400);
   lib.report('browser/PWA: no Android section', (await plain.locator('ion-list-header', { hasText: 'Android app' }).count()) === 0);
 

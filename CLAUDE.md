@@ -54,6 +54,10 @@ on launch/resume and shows an "App updated" toast.
   that order is also the stacking order in reports).
 
 ## UI conventions
+- Timer display: one structure in every state, a sentence-case caption above one big
+  number ("Tap an area to start" / 0:00:00 idle; "Started at 22:45" / elapsed;
+  quiet: "Started at" / muted start time). `.timer-display` min-height follows the
+  digits' size formula, so idle/ticking/quiet share one height (nothing below moves).
 - Native Android/Material feel. Timer page has no title bar; area selector rows come
   from `breakAfter` (row 1: necessities, row 2: hobbies).
 - Toasts via `useToast()` (anchored above the tab bar so they never block the tabs).
@@ -106,9 +110,9 @@ on launch/resume and shows an "App updated" toast.
   from Pages; CI builds the APK). Ongoing notification, no actions; tapping opens
   the Timer tab (`openTimer` event). Two separate per-area settings (`src/runningTime.ts`,
   stored on the area, missing = on, migrated in v10 from the old `liveUpdates` flag):
-  **Running time** (Settings → Appearance; Off / App only / On; Off = a muted
-  "SINCE / 22:45" instead of the big digits, drawn over an invisible copy so nothing
-  moves, and the start time in the Timer tab; Today keeps real totals; the PWA offers
+  **Running time** (Settings → Appearance; Off / App only / On; Off = "Started
+  at" over the muted start time instead of the ticking digits, and the start time in
+  the Timer tab; Today keeps real totals; the PWA offers
   Off / On) and **Live updates** (Settings → Android app;
   on = promoted: status-bar chip at the far left, top of the lock screen, may hide other
   icons; off = plain notification, ranked after messaging apps). The chip and the
