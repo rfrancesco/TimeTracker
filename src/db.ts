@@ -257,29 +257,40 @@ export const uuid = () => crypto.randomUUID();
 // and Self-care calm: in both themes, as displayed, neighbours in this order (also
 // the report stacking order) clear the colour-vision target (ΔE 10.9 ≥ 8) and the
 // normal-vision floor (16.9 ≥ 15), and every pair stays ≥ 10.7 apart.
+// Defaults also: live updates off everywhere, Sleep and Work with running time Off.
 const DEFAULT_AREAS: Array<[string, string, string, string[], boolean?]> = [
   ['Sleep', 'moon', '#041A40', []],
   ['Work', 'briefcase', '#3A6EA5', []],
   ['Home', 'home', '#71A100', ['Cleaning', 'Cooking', 'Laundry', 'Shower']],
-  ['Self-care', 'leaf', '#007A61', []],
+  ['Self-care', 'paw', '#007A61', []],
   ['Thesis', 'school', '#48A7D4', []],
   ['Errand', 'clipboard', '#A97721', [], true],
   ['Guitar', 'musical-notes', '#AF2934', ['Technique', 'Songs']],
   ['Music', 'headset', '#DB795B', []],
   ['Reading', 'book', '#76518C', []],
   ['Cinema', 'film', '#A171E8', []],
-  ['Hobby', 'sparkles', '#BF537A', []],
+  ['Hobby', 'color-palette', '#BF537A', []],
   ['Friends', 'people', '#7B5F06', []],
 ];
 
 type Adder = { add: (item: never) => unknown };
+
+const QUIET_BY_DEFAULT = new Set(['Sleep', 'Work']);
 
 /** Insert the default areas; works both inside 'populate' and in a normal transaction. */
 function seedDefaults(areas: Adder, subAreas: Adder) {
   const t = nowIso();
   DEFAULT_AREAS.forEach(([name, icon, color, subs, breakAfter], i) => {
     const id = uuid();
-    areas.add({ id, name, icon, color, order: i, ...(breakAfter && { breakAfter }), updatedAt: t } as never);
+    areas.add({
+      id, name, icon, color, order: i,
+      ...(breakAfter && { breakAfter }),
+      // Defaults: no live updates (they can hide other status-bar icons); Sleep and Work
+      // without a ticking time.
+      liveUpdate: false,
+      ...(QUIET_BY_DEFAULT.has(name) && { runningTime: 'off' }),
+      updatedAt: t,
+    } as never);
     subs.forEach((s, j) =>
       subAreas.add({ id: uuid(), areaId: id, name: s, order: j, updatedAt: t } as never),
     );

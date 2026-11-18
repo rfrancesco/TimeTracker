@@ -146,7 +146,7 @@ fs.mkdirSync(`${lib.OUT}/bk`, { recursive: true });
   const rlv = await importFile(pb, `${S}/bk/legacy-live.json`);
   const lv = (await dump(pb)).areas;
   const a0 = lv.find((a) => a.id === exported.areas[0].id), a1 = lv.find((a) => a.id === exported.areas[1].id);
-  check('older backup: “live update without the time” becomes running time App only (same behaviour)', !rlv.failed && a0.runningTime === 'app' && !('liveUpdates' in a0) && a0.liveUpdate === undefined && a1.runningTime === undefined && !('liveUpdates' in a1), JSON.stringify([a0.runningTime, a0.liveUpdates, a1.runningTime, a1.liveUpdates]));
+  check('older backup: “live update without the time” becomes running time App only (same behaviour)', !rlv.failed && a0.runningTime === 'app' && !('liveUpdates' in a0) && a0.liveUpdate === exported.areas[0].liveUpdate && a1.runningTime === undefined && !('liveUpdates' in a1), JSON.stringify([a0.runningTime, a0.liveUpdates, a1.runningTime, a1.liveUpdates]));
 
   // ---------- 7. Large: ~3 years of tracking ----------
   const big = { ...exported, intervals: [] };

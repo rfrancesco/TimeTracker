@@ -170,11 +170,12 @@ const FAKE_NATIVE = () => {
   const closeDlg = async (cls) => { await p.locator(`ion-modal.${cls}`).getByRole('button', { name: 'Close' }).click(); await p.waitForSelector(`ion-modal.${cls} ion-title`, { state: 'detached' }); await p.waitForTimeout(300); };
   const rtChip = (area, label) => p.locator(`ion-modal.running-time-dialog [aria-label="${area} running time"] ion-chip`, { hasText: new RegExp(`^${label}$`) });
 
+  const icons = await p.evaluate(() => new Promise((r) => { const q = indexedDB.open('timetracker'); q.onsuccess = () => { q.result.transaction('areas').objectStore('areas').getAll().onsuccess = (e) => r(Object.fromEntries(e.target.result.map((a) => [a.name, a.icon]))); }; }));
+  lib.report('fresh install: Hobby has the palette icon, Self-care the paw', icons.Hobby === 'color-palette' && icons['Self-care'] === 'paw', JSON.stringify([icons.Hobby, icons['Self-care']]));
   // Running time dialog: three chips per area in the Android app, all On by default.
   await openDlg('Running time', 'running-time-dialog');
   const rtState = await p.locator('ion-modal.running-time-dialog .running-time-chips').evaluateAll((es) => es.map((e) => [...e.querySelectorAll('ion-chip')].map((c) => (c.outline ? c.textContent : `[${c.textContent}]`)).join('|')));
-  lib.report('Running time: Off · App only · On per area, On by default', rtState.length === 12 && rtState.every((x) => x === 'Off|App only|[On]'), rtState[0]);
-  await rtChip('Sleep', 'Off').click(); await p.waitForTimeout(300);
+  lib.report('Running time: Off · App only · On per area; by default Sleep and Work Off, the rest On', rtState.length === 12 && rtState[0] === '[Off]|App only|On' && rtState[1] === '[Off]|App only|On' && rtState.slice(2).every((x) => x === 'Off|App only|[On]'), rtState.slice(0, 3).join(' · '));
   await rtChip('Work', 'App only').click(); await p.waitForTimeout(300);
   const sel = await rtChip('Sleep', 'Off').evaluate((c) => ({ bg: c.style.getPropertyValue('--background'), selected: !c.outline, dot: c.closest('ion-item').querySelector('.dot').style.background }));
   const toRgb = (hex) => `rgb(${parseInt(hex.slice(1, 3), 16)}, ${parseInt(hex.slice(3, 5), 16)}, ${parseInt(hex.slice(5, 7), 16)})`;
@@ -182,23 +183,23 @@ const FAKE_NATIVE = () => {
   await p.screenshot({ path: `${lib.OUT}/native-running-time-dialog.png` });
   await closeDlg('running-time-dialog');
   let f = await areaFlags();
-  lib.report('saved on the areas (Sleep off, Work app only)', f.Sleep.rt === 'off' && f.Work.rt === 'app' && f.Home.rt === undefined, JSON.stringify([f.Sleep, f.Work]));
+  lib.report('saved on the areas (Sleep off, Work now app only, Home default)', f.Sleep.rt === 'off' && f.Work.rt === 'app' && f.Home.rt === undefined, JSON.stringify([f.Sleep, f.Work]));
   lib.report('the Settings row sums it up', (await p.locator('ion-item', { hasText: /^Running time/ }).innerText()).includes('2 areas quieter'));
 
   // Live updates dialog: one switch per area.
   await openDlg('Live updates', 'live-updates-dialog');
   const luCount = await p.locator('ion-modal.live-updates-dialog ion-toggle').count();
-  lib.report('Live updates: a switch per area, all on', luCount === 12 && (await p.locator('ion-modal.live-updates-dialog ion-toggle').evaluateAll((es) => es.every((e) => e.checked))));
-  await p.locator('ion-modal.live-updates-dialog ion-toggle[aria-label="Work"]').click(); await p.waitForTimeout(300);
-  await p.locator('ion-modal.live-updates-dialog ion-toggle[aria-label="Reading"]').click(); await p.waitForTimeout(300);
+  lib.report('Live updates: a switch per area, all off by default', luCount === 12 && (await p.locator('ion-modal.live-updates-dialog ion-toggle').evaluateAll((es) => es.every((e) => !e.checked))));
+  await p.locator('ion-modal.live-updates-dialog ion-toggle[aria-label="Sleep"]').click(); await p.waitForTimeout(300);
+  await p.locator('ion-modal.live-updates-dialog ion-toggle[aria-label="Guitar"]').click(); await p.waitForTimeout(300);
   await p.screenshot({ path: `${lib.OUT}/native-live-updates-dialog.png` });
   await closeDlg('live-updates-dialog');
   f = await areaFlags();
   await p.evaluate(() => { window.__liveAllowed = true; });
   await p.locator('ion-tab-button[tab="timer"]').click(); await p.waitForTimeout(300);
   await p.locator('ion-tab-button[tab="settings"]').click(); await p.waitForTimeout(500);
-  lib.report('the Live updates row sums it up: “10 of 12 areas”', (await rows()).includes('Live updates 10 of 12 areas'), JSON.stringify(await rows()));
-  lib.report('saved on the areas (Work, Reading: live update off)', f.Work.lu === false && f.Reading.lu === false && f.Sleep.lu === undefined, JSON.stringify([f.Work, f.Reading]));
+  lib.report('the Live updates row sums it up: “2 of 12 areas”', (await rows()).includes('Live updates 2 of 12 areas'), JSON.stringify(await rows()));
+  lib.report('saved on the areas (Sleep, Guitar: live update on; the rest off)', f.Sleep.lu === true && f.Guitar.lu === true && f.Work.lu === false && f.Reading.lu === false, JSON.stringify([f.Sleep, f.Guitar, f.Work]));
 
   // What reaches the notification, per area.
   await p.locator('ion-tab-button[tab="timer"]').click(); await p.waitForTimeout(400);
@@ -217,9 +218,9 @@ const FAKE_NATIVE = () => {
   lib.report('Work (app only, live update off) → plain notification, no ticking', wk?.title === 'Work' && wk.promote === false && wk.showTime === false, j(wk));
   lib.report('…but the app ticks', /^\d+:\d\d:\d\d$/.test(await p.locator('.timer-digits').innerText()), await p.locator('.timer-digits').innerText());
   const rd = await run('Reading');
-  lib.report('Reading (time on, live update off) → plain notification that ticks', rd?.title === 'Reading' && rd.promote === false && rd.showTime === true, j(rd));
+  lib.report('Reading (defaults: time on, live update off) → plain notification that ticks', rd?.title === 'Reading' && rd.promote === false && rd.showTime === true, j(rd));
   const gt = await run('Guitar');
-  lib.report('Guitar (defaults) → live update that ticks', gt?.title === 'Guitar' && gt.promote === true && gt.showTime === true, j(gt));
+  lib.report('Guitar (time on, live update on) → live update that ticks', gt?.title === 'Guitar' && gt.promote === true && gt.showTime === true, j(gt));
   const tickL = await layout();
   lib.report('ticking: “Started at <time>” above the digits', /^Started at \d\d:\d\d/.test((await p.locator('.timer-caption').innerText()).trim()), await p.locator('.timer-caption').innerText());
   lib.report('quiet and ticking areas share one layout (area buttons don’t move)', quietL.pills === tickL.pills && quietL.display === tickL.display, `${JSON.stringify(quietL)} vs ${JSON.stringify(tickL)}`);
