@@ -200,15 +200,18 @@ export default function TimerPage() {
                     {activeSub ? ` · ${activeSub.name}` : ''}
                   </span>
                 </div>
-                {ticking ? (
-                  <>
-                    <div className="timer-digits">{formatDuration(elapsed)}</div>
-                    <div className="timer-since">since {sinceText}</div>
-                  </>
-                ) : (
-                  // Running time off for this area (e.g. Sleep): no ticking time.
-                  <div className="timer-digits quiet">since {sinceText}</div>
-                )}
+                {/* Running time off (e.g. Sleep): a calm "SINCE 22:45" instead of the ticking
+                    digits, drawn over an invisible copy of them so nothing else moves. */}
+                <div className={`timer-face${ticking ? '' : ' quiet'}`}>
+                  <div className="timer-digits" aria-hidden={!ticking}>{ticking ? formatDuration(elapsed) : '0:00:00'}</div>
+                  <div className="timer-since" aria-hidden={!ticking}>since {sinceText}</div>
+                  {!ticking && (
+                    <div className="timer-quiet">
+                      <span className="timer-quiet-label">since</span>
+                      <span className="timer-quiet-time">{sinceText}</span>
+                    </div>
+                  )}
+                </div>
               </>
             ) : (
               <>
@@ -336,9 +339,7 @@ export default function TimerPage() {
                       <IonIcon icon={iconFor(a.icon)} />
                     </span>
                     <span className="name">{a.name}</span>
-                    <span className="dur">
-                      {areaId === active?.areaId && !ticking ? `since ${sinceText}` : formatDuration(ms, false)}
-                    </span>
+                    <span className="dur">{formatDuration(ms, false)}</span>
                   </div>
                 );
               })}

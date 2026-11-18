@@ -106,8 +106,10 @@ on launch/resume and shows an "App updated" toast.
   from Pages; CI builds the APK). Ongoing notification, no actions; tapping opens
   the Timer tab (`openTimer` event). Two separate per-area settings (`src/runningTime.ts`,
   stored on the area, missing = on, migrated in v10 from the old `liveUpdates` flag):
-  **Running time** (Settings → Appearance; Off / App only / On; Off = "since 22:45" in
-  the app too; the PWA offers Off / On) and **Live updates** (Settings → Android app;
+  **Running time** (Settings → Appearance; Off / App only / On; Off = a muted
+  "SINCE / 22:45" instead of the big digits, drawn over an invisible copy so nothing
+  moves, and the start time in the Timer tab; Today keeps real totals; the PWA offers
+  Off / On) and **Live updates** (Settings → Android app;
   on = promoted: status-bar chip at the far left, top of the lock screen, may hide other
   icons; off = plain notification, ranked after messaging apps). The chip and the
   notification share one clock: it ticks only for running time On, else icon only.

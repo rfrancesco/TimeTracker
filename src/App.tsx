@@ -30,13 +30,18 @@ import './theme.css';
 // Ionic picks 'md' (Material) on Android and 'ios' on iPhone automatically.
 setupIonicReact();
 
-/** Timer tab label: the elapsed time while tracking (unless the area's running time is off), else "Timer". */
+/**
+ * Timer tab label: the elapsed time while tracking; the start time (e.g. "22:45")
+ * when the area's running time is off; "Timer" when idle.
+ */
 function TimerTabLabel() {
   const active = useActive();
   const area = useAreas(true).find((a) => a.id === active?.areaId);
   const ticking = !!active && ticksInApp(area);
   const now = useNow(1000, ticking);
-  return <IonLabel>{ticking ? formatDuration(now - new Date(active!.start).getTime()) : 'Timer'}</IonLabel>;
+  if (!active) return <IonLabel>Timer</IonLabel>;
+  if (!ticking) return <IonLabel>{new Date(active.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</IonLabel>;
+  return <IonLabel>{formatDuration(now - new Date(active.start).getTime())}</IonLabel>;
 }
 
 /**
