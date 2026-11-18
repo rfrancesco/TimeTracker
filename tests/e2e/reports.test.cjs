@@ -54,6 +54,8 @@ const S = lib.OUT;
     const restRows = rows.filter(r => ['Untracked', 'Still to come', 'Before tracking'].includes(r[0])).map(r => r[0] + ' ' + r[1]).join(', ');
     const expect = { day: '24h 00m', week: '168h 00m', month: '720h 00m' }[label];
     if (expect) lib.report(`${label}: parts add up to the whole period`, fmt(sum) === expect, `${fmt(sum)} | ${restRows}`);
+    const whole = { day: 'tracked of 24h', week: 'tracked of 168h', month: 'tracked of 720h' }[label];
+    if (whole) lib.report(`${label}: the period length has no “00m”`, (await p.locator('.donut-caption').innerText()) === whole, await p.locator('.donut-caption').innerText());
     console.log(`${label.padEnd(18)} slices=${await p.locator('.donut-slice').count()} | rows sum ${fmt(sum)} | ${restRows || '(tracked only)'} | centre: ${await p.locator('.donut-caption').innerText()} | hero: ${await p.locator('.hero-caption').innerText()}`);
   };
   await read('day');

@@ -10,7 +10,15 @@ const { chromium, devices } = require('playwright');
     await p.locator('ion-tab-button[tab="reports"]').click(); await p.waitForTimeout(900);
     const rows = (await p.locator('.report-row .row-top').allInnerTexts()).map(x => x.replace(/\n/g, ' ')).join(' ; ');
     const centre = await p.locator('.donut-caption').innerText();
-    lib.report(`${label}: day report covers ${label.startsWith('spring') ? 23 : 25} h`, centre.includes(label.startsWith('spring') ? '23h 00m' : '25h 00m'), `${centre} | ${rows}`);
+    lib.report(`${label}: day report covers ${label.startsWith('spring') ? 23 : 25} h`, centre === `tracked of ${label.startsWith('spring') ? 23 : 25}h`, `${centre} | ${rows}`);
   }
+  // Lord Howe Island shifts by 30 min: that day is 23.5 h, and keeps its minutes.
+  { const p = await (await b.newContext({ ...devices['Pixel 7'], timezoneId: 'Australia/Lord_Howe' })).newPage();
+    await p.clock.install({ time: new Date('2026-10-04T12:00:00+11:00') });
+    await p.goto(lib.BASE); await p.waitForSelector('.area-pill-btn');
+    await p.locator('.timer-layout .area-pill-btn[aria-label="Guitar"]').click(); await p.waitForTimeout(400);
+    await p.locator('ion-tab-button[tab="reports"]').click(); await p.waitForTimeout(900);
+    const centre = await p.locator('.donut-caption').innerText();
+    lib.report('half-hour DST day (Lord Howe): “tracked of 23h 30m”', centre === 'tracked of 23h 30m', centre); }
   await b.close();
 })();

@@ -31,6 +31,8 @@ const savePref = (k: string, v: boolean) => {
 };
 
 const dur = (ms: number) => formatDuration(ms, false);
+/** A whole period's length: "24h" (whole hours, always for whole-hour DST shifts), else "23h 30m". */
+const periodDur = (ms: number) => (ms % 3_600_000 === 0 ? `${ms / 3_600_000}h` : dur(ms));
 const pct = (part: number, whole: number) => (whole > 0 ? `${Math.round((part / whole) * 100)}%` : '–');
 
 export default function ReportPage() {
@@ -110,7 +112,7 @@ export default function ReportPage() {
     ? { value: dur(sel.value), caption: `${sel.label} · ${pct(sel.value, base)}` }
     : {
         value: dur(report.total),
-        caption: full ? `tracked of ${dur(rest.length)}` : period === 'day' ? 'tracked' : `tracked · ${report.availableDays} d`,
+        caption: full ? `tracked of ${periodDur(rest.length)}` : period === 'day' ? 'tracked' : `tracked · ${report.availableDays} d`,
       };
   const fullLabel = period === 'day' ? 'Full day' : period === 'week' ? 'Full week' : 'Full month';
 
