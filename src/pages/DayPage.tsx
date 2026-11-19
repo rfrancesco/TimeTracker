@@ -2,12 +2,14 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
   IonButton, IonButtons, IonContent, IonFab, IonFabButton, IonHeader, IonIcon, IonPage, IonTitle, IonToolbar,
+  useIonViewWillLeave,
 } from '@ionic/react';
 import { add, chevronBack, chevronForward, documentTextOutline, removeOutline, addOutline, todayOutline } from 'ionicons/icons';
 import IntervalEditor, { type EditorValue } from '../components/IntervalEditor';
 import { db, intervalsOverlapping, type Interval } from '../db';
 import { ConstraintError, freeBounds, saveInterval } from '../constraints';
 import { useActive, useAreas, useNow, useSubAreas, useToast } from '../hooks';
+import { useEditUndo } from '../editUndo';
 import { iconFor } from '../icons';
 import { formatDuration } from '../timer';
 import { MINUTE, addLocalDays, atLocalTime, hourMarks, localDateKey, startOfLocalDay } from '../time';
@@ -78,6 +80,9 @@ export default function DayPage() {
   const [draft, setDraft] = useState<{ id: string; start: number; end: number } | null>(null);
   const [editing, setEditing] = useState<EditorValue | null>(null);
   const toast = useToast();
+  const editUndo = useEditUndo();
+  useIonViewWillLeave(() => editUndo.forget()); // the quick undo is only valid in this view
+  const areaName = (id: string | undefined) => areas.find((a) => a.id === id)?.name ?? 'interval';
   const contentRef = useRef<HTMLIonContentElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<HTMLDivElement>(null);
@@ -233,7 +238,13 @@ export default function DayPage() {
     };
   }, [selectedId, intervals]);
 
-  const drag = useRef<{ id: string; mode: DragMode; y0: number; s0: number; e0: number; moved: boolean } | null>(null);
+  // Dragging is deliberate: on a selected block, a short hold lifts it (vibration +
+  // shadow) and only then does it follow the finger. Moving before that scrolls the
+  // page as usual; a quick tap opens the editor; a hold released in place does nothing.
+  const HOLD_MS = 300;
+  const SLOP = 8; // px of movement that cancels a hold (it's a scroll)
+  const drag = useRef<{ id: string; mode: DragMode; y0: number; s0: number; e0: number; armed: boolean; moved: boolean } | null>(null);
+  const [lifted, setLifted] = useState<string | null>(null);
   const suppressClickUntil = useRef(0);
   const draftRef = useRef(draft);
   draftRef.current = draft;
@@ -241,12 +252,32 @@ export default function DayPage() {
   function beginDrag(e: React.PointerEvent, b: Block, mode: DragMode) {
     if (b.active || selectedId !== b.id) return;
     e.stopPropagation();
-    drag.current = { id: b.id, mode, y0: e.clientY, s0: b.start, e0: b.end, moved: false };
+    const d0 = { id: b.id, mode, y0: e.clientY, s0: b.start, e0: b.end, armed: false, moved: false };
+    drag.current = d0;
+    const holdTimer = window.setTimeout(() => {
+      if (drag.current !== d0) return;
+      d0.armed = true;
+      setLifted(b.id);
+      navigator.vibrate?.(15);
+    }, HOLD_MS);
+    // Once armed, the page must not scroll under the finger.
+    const blockScroll = (ev: TouchEvent) => {
+      if (drag.current === d0 && d0.armed && ev.cancelable) ev.preventDefault();
+    };
+    window.addEventListener('touchmove', blockScroll, { passive: false });
 
     const onMove = (ev: PointerEvent) => {
       const d = drag.current;
       if (!d) return;
       const dy = ev.clientY - d.y0;
+      if (!d.armed) {
+        if (Math.abs(dy) > SLOP) {
+          // A scroll, not a drag; a mouse would also fire a click on release: ignore it.
+          suppressClickUntil.current = Date.now() + 1500;
+          cleanup();
+        }
+        return;
+      }
       if (Math.abs(dy) > 4) d.moved = true;
       if (!d.moved) return;
       const bnd = bounds.current;
@@ -264,36 +295,52 @@ export default function DayPage() {
       else en = Math.max(Math.min(d.e0 + delta, bnd.max), d.s0 + minLen);
       setDraft({ id: d.id, start: s, end: en });
     };
-    const onUp = async () => {
+    function cleanup() {
+      window.clearTimeout(holdTimer);
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
-      window.removeEventListener('pointercancel', onUp);
+      window.removeEventListener('pointercancel', onCancel);
+      window.removeEventListener('touchmove', blockScroll);
+      if (drag.current === d0) drag.current = null;
+      setLifted(null);
+    }
+    const onCancel = () => {
+      cleanup();
+      setDraft(null);
+    };
+    const onUp = async () => {
       const d = drag.current;
-      drag.current = null;
+      cleanup();
+      if (!d) return;
       const dr = draftRef.current;
-      if (d?.moved && dr) {
-        // The browser fires a click after pointerup; don't let it deselect.
+      if (d.armed) {
+        // The browser fires a click after pointerup; don't let it deselect or open the editor.
         suppressClickUntil.current = Date.now() + 400;
+        if (!d.moved || !dr) return void setDraft(null);
         navigator.vibrate?.(8);
         const iv = await db.intervals.get(dr.id);
+        const name = areaName(iv?.areaId);
         try {
           if (iv) {
-            await saveInterval({ id: iv.id, areaId: iv.areaId, subAreaId: iv.subAreaId, note: iv.note, start: dr.start, end: dr.end });
+            await editUndo.run(`${d.mode === 'move' ? 'Moved' : 'Resized'} ${name}`, Math.min(dr.start, d.s0), () =>
+              saveInterval({ id: iv.id, areaId: iv.areaId, subAreaId: iv.subAreaId, note: iv.note, start: dr.start, end: dr.end }),
+            );
           }
         } catch (err) {
           // Clamping should prevent this; if data changed underneath, snap back.
           toast(err instanceof ConstraintError ? `Not moved: ${err.message.toLowerCase()}` : 'Not moved');
         }
         setDraft(null);
-      } else if (d) {
-        // A tap without movement opens the editor, even on a resize handle
+      } else {
+        // A tap (released before the hold) opens the editor, even on a resize handle
         // (on short blocks the handles cover most of the block).
+        suppressClickUntil.current = Date.now() + 400;
         openEditor(b);
       }
     };
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
-    window.addEventListener('pointercancel', onUp);
+    window.addEventListener('pointercancel', onCancel);
   }
 
   function openEditor(b: Block) {
@@ -428,7 +475,7 @@ export default function DayPage() {
                       style={{ top, height: Math.max(2, height), ['--area-color' as string]: color, ['--on-area' as string]: ink }}
                     />
                     <div
-                      className={`day-chip${selected ? ' selected' : ''}${b.active ? ' active' : ''}`}
+                      className={`day-chip${selected ? ' selected' : ''}${b.active ? ' active' : ''}${lifted === b.id ? ' lifted' : ''}`}
                       style={{ top: chipTop, height: CHIP_H, ['--area-color' as string]: color, ['--on-area' as string]: ink }}
                       onClick={onClick}
                       onPointerDown={(e) => beginDrag(e, b, 'move')}
@@ -445,7 +492,7 @@ export default function DayPage() {
               return (
                 <div
                   key={b.id}
-                  className={`day-block${selected ? ' selected' : ''}${b.active ? ' active' : ''}${height < 44 ? ' compact' : ''}`}
+                  className={`day-block${selected ? ' selected' : ''}${b.active ? ' active' : ''}${height < 44 ? ' compact' : ''}${lifted === b.id ? ' lifted' : ''}`}
                   style={{
                     top,
                     height: height - 2,

@@ -52,7 +52,7 @@ const T = hm => new Date(`2026-11-15T${hm}:00+01:00`).toISOString();
   await p.locator('.day-chip', { hasText: 'Music' }).scrollIntoViewIfNeeded();
   await p.locator('.day-chip', { hasText: 'Music' }).click(); await p.waitForTimeout(300);
   const c = await p.locator('.day-chip.selected').boundingBox();
-  await p.mouse.move(c.x + 20, c.y + 10); await p.mouse.down(); await p.mouse.move(c.x + 20, c.y + 300, { steps: 10 }); await p.mouse.up(); await p.waitForTimeout(500);
+  await p.mouse.move(c.x + 20, c.y + 10); await p.mouse.down(); await p.waitForTimeout(400); /* hold to lift */ await p.mouse.move(c.x + 20, c.y + 300, { steps: 10 }); await p.mouse.up(); await p.waitForTimeout(500);
   const music = await p.evaluate(() => new Promise(r => { const q = indexedDB.open('timetracker'); q.onsuccess = () => { q.result.transaction('intervals').objectStore('intervals').get('m').onsuccess = e => r(e.target.result); }; }));
   const f = s => new Date(s).toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' });
   lib.report('dragging a chip stops at the running timer', f(music.end) === '13:10', `${f(music.start)}-${f(music.end)}`);

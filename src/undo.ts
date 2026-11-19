@@ -102,3 +102,34 @@ export function useUndoRedo(): { canUndo: boolean; canRedo: boolean } {
   );
   return { canUndo: state[0] === '1', canRedo: state[1] === '1' };
 }
+
+// ---- Day view edits: a one-step "Undo" (snackbar), separate from the timer's ↶ ↷ ----
+// Same snapshot-and-verify mechanism: the region is the running timer plus every
+// interval ending after `from` (the earliest moment the edit touches). Valid until the
+// next edit or until the Day view is left.
+
+let lastEdit: Entry | null = null;
+
+/** Run a Day view edit and remember it for the snackbar's Undo. Returns whether anything changed. */
+export async function recordEdit<T>(label: string, fromMs: number, action: () => Promise<T>): Promise<{ result: T; changed: boolean }> {
+  const from = new Date(fromMs).toISOString();
+  const before = await snapshot(from);
+  const result = await action();
+  const after = await snapshot(from);
+  const changed = !same(before, after);
+  lastEdit = changed ? { label, from, before, after } : null;
+  return { result, changed };
+}
+
+/** Undo the last Day view edit, if things are still as it left them. */
+export async function undoLastEdit(): Promise<{ ok: boolean; label?: string }> {
+  const e = lastEdit;
+  lastEdit = null;
+  if (!e) return { ok: false };
+  const ok = await restore(e, e.after, e.before);
+  return { ok, label: e.label };
+}
+
+export function forgetLastEdit() {
+  lastEdit = null;
+}

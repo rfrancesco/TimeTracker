@@ -31,23 +31,25 @@ const T = (hm) => new Date(`2026-11-15T${hm}:00+01:00`).toISOString();
   const work = p.locator('.day-block', { hasText: 'Work' });
   await work.click(); await p.waitForTimeout(400);
   let h = await p.locator('.day-block.selected .handle.bottom').boundingBox();
-  await p.mouse.move(h.x + h.width / 2, h.y + h.height / 2); await p.mouse.down();
+  await p.mouse.move(h.x + h.width / 2, h.y + h.height / 2); await p.mouse.down(); await p.waitForTimeout(400); /* hold to lift */
   await p.mouse.move(h.x + h.width / 2, h.y + 600, { steps: 12 }); await p.mouse.up(); await p.waitForTimeout(500);
   await check('drag Work end far down');
   // 2) Move Thesis up into Work: must stop at Work's end
   await p.locator('.day-block', { hasText: 'Thesis' }).click(); await p.waitForTimeout(400);
   const th = await p.locator('.day-block.selected').boundingBox();
-  await p.mouse.move(th.x + th.width / 2, th.y + 30); await p.mouse.down();
+  await p.mouse.move(th.x + th.width / 2, th.y + 30); await p.mouse.down(); await p.waitForTimeout(400); /* hold to lift */
   await p.mouse.move(th.x + th.width / 2, th.y - 400, { steps: 12 }); await p.mouse.up(); await p.waitForTimeout(500);
   await check('move Thesis up into Work');
   // 3) Resize Thesis bottom into the future: must stop at now (18:00)
   // (Thesis is still selected from step 2; tapping it again would open the editor.)
   h = await p.locator('.day-block.selected .handle.bottom').boundingBox();
-  await p.mouse.move(h.x + h.width / 2, h.y + h.height / 2); await p.mouse.down();
+  await p.mouse.move(h.x + h.width / 2, h.y + h.height / 2); await p.mouse.down(); await p.waitForTimeout(400); /* hold to lift */
   await p.mouse.move(h.x + h.width / 2, h.y + 700, { steps: 12 }); await p.mouse.up(); await p.waitForTimeout(500);
   await check('drag Thesis end into future');
-  await p.locator('ion-fab-button').click(); await p.waitForTimeout(300);
-  { const t = await p.locator('ion-toast').evaluate(t => t.message).catch(() => 'none'); lib.report('+ with no free time says so', /No free time/.test(t), t); }
+  await p.evaluate(() => { window.__toasts = []; document.addEventListener('ionToastWillPresent', (e) => window.__toasts.push(e.target.message)); });
+  await p.locator('ion-fab-button').click();
+  await p.waitForFunction(() => window.__toasts.length > 0);
+  { const t = await p.evaluate(() => window.__toasts.at(-1)); lib.report('+ with no free time says so', /No free time/.test(t), t); }
   await p.waitForTimeout(2500);
 
   // 4) Editor: new interval overlapping both -> alert; cancel, then replace

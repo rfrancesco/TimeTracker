@@ -8,6 +8,7 @@ import AreaPill from './AreaPill';
 import SubAreaChips from './SubAreaChips';
 import { db } from '../db';
 import { ConstraintError, OverlapError, describeConflicts, saveInterval, updateActive } from '../constraints';
+import { useEditUndo } from '../editUndo';
 import { useAreas, useSubAreas } from '../hooks';
 import { formatDuration } from '../timer';
 import { localDateKey } from '../time';
@@ -84,6 +85,7 @@ export default function IntervalEditor({ value, onClose }: Props) {
   const areas = useAreas();
   const subAreas = useSubAreas();
   const [v, setV] = useState<EditorValue | null>(value);
+  const editUndo = useEditUndo();
   const [presentAlert] = useIonAlert();
 
   useEffect(() => {
@@ -111,13 +113,20 @@ export default function IntervalEditor({ value, onClose }: Props) {
 
   async function save(overwrite = false) {
     if (!v || !valid) return;
+    const name = area?.name ?? 'interval';
+    // The earliest moment the save can touch: the old and the new start.
+    const from = Math.min(v.start, value?.start ?? v.start);
     try {
       if (v.kind === 'active') {
-        await updateActive({ start: v.start, areaId: v.areaId, subAreaId: v.subAreaId }, { overwrite });
+        await editUndo.run(`Changed ${name}`, from, () =>
+          updateActive({ start: v.start, areaId: v.areaId, subAreaId: v.subAreaId }, { overwrite }),
+        );
       } else {
-        await saveInterval(
-          { id: v.kind === 'existing' ? v.id : undefined, areaId: v.areaId, subAreaId: v.subAreaId, start: v.start, end: v.end, note: v.note },
-          { overwrite },
+        await editUndo.run(v.kind === 'existing' ? `Saved ${name}` : `Added ${name}`, from, () =>
+          saveInterval(
+            { id: v.kind === 'existing' ? v.id : undefined, areaId: v.areaId, subAreaId: v.subAreaId, start: v.start, end: v.end, note: v.note },
+            { overwrite },
+          ),
         );
       }
       onClose();
@@ -143,15 +152,17 @@ export default function IntervalEditor({ value, onClose }: Props) {
     if (!v) return;
     presentAlert({
       header: isActive ? 'Discard running timer?' : 'Delete interval?',
-      message: isActive ? 'The current timer will be dropped without saving.' : 'This cannot be undone.',
+      message: isActive ? 'The current timer will be dropped without saving.' : 'You can undo it right after.',
       buttons: [
         { text: 'Cancel', role: 'cancel' },
         {
           text: isActive ? 'Discard' : 'Delete',
           role: 'destructive',
           handler: async () => {
-            if (isActive) await db.active.delete('current');
-            else if (v.id) await db.intervals.delete(v.id);
+            const name = area?.name ?? 'interval';
+            const from = value?.start ?? v.start;
+            if (isActive) await editUndo.run(`Discarded ${name}`, from, () => db.active.delete('current'));
+            else if (v.id) await editUndo.run(`Deleted ${name}`, from, () => db.intervals.delete(v.id!));
             onClose();
           },
         },

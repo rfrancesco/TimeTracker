@@ -61,6 +61,16 @@ on launch/resume and shows an "App updated" toast.
 - Native Android/Material feel. Timer page has no title bar; area selector rows come
   from `breakAfter` (row 1: necessities, row 2: hobbies).
 - Toasts via `useToast()` (anchored above the tab bar so they never block the tabs).
+  One at a time app-wide (`dismissAllToasts()` before presenting).
+- Day view: dragging is deliberate. Tap selects; on a selected block a ~300 ms hold
+  lifts it (vibration + `.lifted`), only then it follows the finger; moving before
+  that scrolls (selected blocks are `touch-action: pan-y`; once lifted, a non-passive
+  touchmove listener stops scrolling); a tap opens the editor; a hold released in
+  place does nothing. Every Day edit (drag/resize, editor save/add/delete, editing or
+  discarding the running timer) goes through `useEditUndo()` (`src/editUndo.ts`): a
+  snackbar "<what> · Undo", one step, separate from the Timer's ↶ ↷ but the same
+  snapshot-and-verify (`recordEdit`/`undoLastEdit` in `src/undo.ts`); leaving the
+  Day view forgets it. While the snackbar is up, the + FAB moves above it.
 - Tab switches: opacity-only fade (scaling would open a gap at the top). The status
   bar matches the top of the visible page and crossfades with it (MutationObserver +
   underlay of the old page's colours). Keep `PAGE_FADE` in `App.tsx` and the CSS

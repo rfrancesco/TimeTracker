@@ -236,7 +236,7 @@
 }
 .day-block.selected {
   z-index: 5;
-  touch-action: none;
+  touch-action: pan-y; /* scrolls like the rest; a hold lifts it for dragging */
   background: var(--area-color);
   color: var(--on-area, #fff);
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
@@ -259,7 +259,7 @@
   left: 0;
   right: 0;
   height: 22px;
-  touch-action: none;
+  touch-action: pan-y;
 }
 .handle.top { top: -6px; cursor: ns-resize; }
 .handle.bottom { bottom: -6px; cursor: ns-resize; }
@@ -530,7 +530,7 @@ ion-item.row-break { --border-width: 0 0 3px 0; }
 .day-chip ion-icon { flex: 0 0 auto; font-size: 14px; }
 .day-chip .chip-name { flex: 1; overflow: hidden; text-overflow: ellipsis; }
 .day-chip .chip-dur { opacity: 0.85; font-variant-numeric: tabular-nums; }
-.day-chip.selected { touch-action: none; outline: 2px solid var(--ion-text-color, #000); outline-offset: 2px; }
+.day-chip.selected { touch-action: pan-y; outline: 2px solid var(--ion-text-color, #000); outline-offset: 2px; }
 .day-chip.active { background: repeating-linear-gradient(-45deg, var(--area-color) 0 6px, color-mix(in srgb, var(--area-color) 75%, #000) 6px 12px); }
 .zoom-pill {
   position: absolute;
@@ -683,3 +683,15 @@ ion-tabs .ion-page:not(.ion-page-hidden) {
 /* Caption above the big number (all states); muted like the idle/quiet number. */
 .timer-caption { font-size: 17px; margin-top: 10px; color: var(--ion-color-step-600, var(--ion-text-color-step-400, #888)); }
 .timer-digits.quiet { color: var(--ion-color-step-600, var(--ion-text-color-step-400, #888)); }
+
+/* Day view: a held (lifted) block follows the finger. */
+.day-block.lifted, .day-chip.lifted {
+  transform: scale(1.03);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5);
+  transition: transform 120ms ease-out, box-shadow 120ms ease-out;
+}
+.edit-undo-toast { --button-color: var(--ion-color-primary); }
+
+/* While the Day view's Undo snackbar is up, the + button moves above it. */
+ion-fab { transition: transform 200ms ease-out; }
+body.snackbar-up ion-fab { transform: translateY(-64px); }
