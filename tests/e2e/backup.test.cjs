@@ -141,12 +141,16 @@ fs.mkdirSync(`${lib.OUT}/bk`, { recursive: true });
   check('older-format backup still restores', /^Backup restored/.test(rl.toast || '') && ld.intervals.length === exported.intervals.length && ld.areas.length === exported.areas.length, rl.failed || rl.toast);
 
   // ---------- 6c. Backup with the pre-v10 live updates flag ----------
-  const legacyLive = { ...exported, areas: exported.areas.map((a, i) => (i === 0 ? { ...a, liveUpdates: false } : i === 1 ? { ...a, liveUpdates: true } : a)) };
+  // Two areas without a running time setting (as pre-v10 backups had), picked
+  // deterministically: area ids are random, so array order varies between runs.
+  const plain = exported.areas.filter((a) => a.runningTime === undefined).sort((a, b) => a.name.localeCompare(b.name));
+  const [L0, L1] = plain;
+  const legacyLive = { ...exported, areas: exported.areas.map((a) => (a.id === L0.id ? { ...a, liveUpdates: false } : a.id === L1.id ? { ...a, liveUpdates: true } : a)) };
   fs.writeFileSync(`${S}/bk/legacy-live.json`, JSON.stringify(legacyLive));
   const rlv = await importFile(pb, `${S}/bk/legacy-live.json`);
   const lv = (await dump(pb)).areas;
-  const a0 = lv.find((a) => a.id === exported.areas[0].id), a1 = lv.find((a) => a.id === exported.areas[1].id);
-  check('older backup: “live update without the time” becomes running time App only (same behaviour)', !rlv.failed && a0.runningTime === 'app' && !('liveUpdates' in a0) && a0.liveUpdate === exported.areas[0].liveUpdate && a1.runningTime === undefined && !('liveUpdates' in a1), JSON.stringify([a0.runningTime, a0.liveUpdates, a1.runningTime, a1.liveUpdates]));
+  const a0 = lv.find((a) => a.id === L0.id), a1 = lv.find((a) => a.id === L1.id);
+  check('older backup: “live update without the time” becomes running time App only (same behaviour)', !rlv.failed && a0.runningTime === 'app' && !('liveUpdates' in a0) && a0.liveUpdate === L0.liveUpdate && a1.runningTime === undefined && !('liveUpdates' in a1), JSON.stringify([a0.runningTime, a0.liveUpdates, a1.runningTime, a1.liveUpdates]));
 
   // ---------- 7. Large: ~3 years of tracking ----------
   const big = { ...exported, intervals: [] };
