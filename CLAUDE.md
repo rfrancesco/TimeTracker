@@ -62,7 +62,8 @@ on launch/resume and shows an "App updated" toast.
   from `breakAfter` (row 1: necessities, row 2: hobbies).
 - Toasts via `useToast()` (anchored above the tab bar so they never block the tabs).
   One at a time app-wide (`dismissAllToasts()` before presenting).
-- Day view: dragging is deliberate. Tap selects; on a selected block a ~300 ms hold
+- Day view: dragging is deliberate. Tap selects; on a selected block a hold of Android's
+  long-press delay (`longPressMs()`, `src/longPress.ts`; 400 ms default/browser)
   lifts it (vibration + `.lifted`), only then it follows the finger; moving before
   that scrolls (selected blocks are `touch-action: pan-y`; once lifted, a non-passive
   touchmove listener stops scrolling); a tap opens the editor; a hold released in

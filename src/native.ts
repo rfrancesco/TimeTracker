@@ -72,6 +72,10 @@ export interface NativeStatus {
   promoted?: boolean;
   lastError?: string;
   lastShown?: number;
+  /** The last failed load of the web app's page (newer APKs). */
+  lastLoadError?: { at: number; code: number; description: string; url: string };
+  /** Android's long-press timeout in ms (newer APKs). */
+  longPressTimeout?: number;
 }
 
 /** Inside the Android wrapper (even if the plugin is missing, e.g. a broken bridge). */

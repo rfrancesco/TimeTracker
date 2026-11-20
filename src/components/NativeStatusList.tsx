@@ -49,6 +49,7 @@ export default function NativeStatusList() {
           ? 'Showing · doesn’t qualify as a Live Update'
           : 'Showing · not promoted';
   const problem = error ?? s?.lastError ?? lastBridgeError;
+  const loadError = s?.lastLoadError;
 
   return (
     <IonList>
@@ -84,6 +85,16 @@ export default function NativeStatusList() {
             </IonItem>
           </>
         )
+      )}
+      {loadError && (
+        <IonItem>
+          <IonLabel className="ion-text-wrap">
+            <p>
+              Last time the app couldn’t open ({new Date(loadError.at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}):{' '}
+              {loadError.description} ({loadError.code})
+            </p>
+          </IonLabel>
+        </IonItem>
       )}
       {problem && (
         <IonItem>

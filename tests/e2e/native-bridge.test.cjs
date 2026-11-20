@@ -26,7 +26,7 @@ const FAKE_NATIVE = () => {
         return Promise.resolve(getPending() || {});
       }
       if (method === 'clearPendingStop') { if (getPending()?.start === opts.start) setPending(null); return Promise.resolve(); }
-      if (method === 'status') return Promise.resolve({ sdk: 37, permission: 'granted', notificationsEnabled: true, liveUpdatesAllowed: !!window.__liveAllowed, promotable: true, posted: true, promoted: false });
+      if (method === 'status') return Promise.resolve({ sdk: 37, permission: 'granted', notificationsEnabled: true, liveUpdatesAllowed: !!window.__liveAllowed, promotable: true, posted: true, promoted: false, longPressTimeout: 1000, lastLoadError: { at: Date.parse('2026-11-16T07:00:00Z'), code: -2, description: 'net::ERR_INTERNET_DISCONNECTED', url: 'https://rfrancesco.github.io/TimeTracker/' } });
       return Promise.resolve(method === 'showTimer' ? { shown: true } : undefined);
     },
     nativeCallback(_plugin, method, opts, cb) {
@@ -55,7 +55,7 @@ const FAKE_NATIVE = () => {
   await p.waitForTimeout(500);
 
   const db = () => p.evaluate(() => new Promise((r) => { const q = indexedDB.open('timetracker'); q.onsuccess = () => { const t = q.result.transaction(['intervals', 'active', 'areas']); t.objectStore('areas').getAll().onsuccess = (e0) => { const n = Object.fromEntries(e0.target.result.map((a) => [a.id, a.name])); t.objectStore('intervals').getAll().onsuccess = (e) => { t.objectStore('active').get('current').onsuccess = (e2) => { const f = (s) => new Date(s).toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' }); const a = e2.target.result; r(`[${e.target.result.sort((x, y) => x.start.localeCompare(y.start)).map((i) => n[i.areaId] + ' ' + f(i.start) + '–' + f(i.end)).join(', ')}] ${a ? '▶ ' + n[a.areaId] + ' since ' + f(a.start) : 'idle'}`); }; }; }; }; }));
-  const calls = () => p.evaluate(() => window.__calls.filter(([m]) => !['takePendingStop', 'peekPendingStop', 'clearPendingStop', 'haptic'].includes(m)));
+  const calls = () => p.evaluate(() => window.__calls.filter(([m]) => !['takePendingStop', 'peekPendingStop', 'clearPendingStop', 'haptic', 'status'].includes(m)));
   const last = async () => (await calls()).at(-1);
   const activeStart = () => p.evaluate(() => new Promise((r) => { const q = indexedDB.open('timetracker'); q.onsuccess = () => { q.result.transaction('active').objectStore('active').get('current').onsuccess = (e) => r(e.target.result && Date.parse(e.target.result.start)); }; }));
   const tap = async (name) => { await p.locator(`.timer-layout .area-pill-btn[aria-label="${name}"]`).click(); await p.waitForTimeout(400); };
@@ -236,6 +236,24 @@ const FAKE_NATIVE = () => {
   await tap('Sleep'); await ff(2); await p.waitForTimeout(400);
   lib.report('…also on a 360 px screen', quiet360.pills === tick360.pills && quiet360.caption === tick360.caption && quiet360.number === tick360.number, `${JSON.stringify(quiet360)} vs ${JSON.stringify(tick360)}`);
   await p.setViewportSize({ width: 412, height: 839 }); await p.waitForTimeout(300);
+  await p.locator('ion-tab-button[tab="settings"]').click(); await p.waitForTimeout(400);
+
+  // Settings shows the last time the app's page couldn't load (what the WebView said).
+  const loadRow = await p.locator('ion-item', { hasText: 'couldn’t open' }).innerText().catch(() => '');
+  lib.report('Settings shows the last load problem', /ERR_INTERNET_DISCONNECTED/.test(loadRow), loadRow.replace(/\s+/g, ' '));
+
+  // The Day view's hold uses Android's long-press delay (1 s in this fake).
+  await p.locator('ion-tab-button[tab="day"]').click(); await p.waitForTimeout(800);
+  const anyBlock = p.locator('.day-block:not(.active), .day-chip:not(.active)').first();
+  await anyBlock.scrollIntoViewIfNeeded(); await anyBlock.click(); await p.waitForTimeout(300);
+  const held = p.locator('.day-block.selected, .day-chip.selected').first();
+  const bb = await held.boundingBox();
+  await p.mouse.move(bb.x + bb.width / 2, bb.y + bb.height / 2); await p.mouse.down(); await p.waitForTimeout(600);
+  const early = await held.evaluate((e) => e.classList.contains('lifted'));
+  await p.waitForTimeout(600);
+  const late = await held.evaluate((e) => e.classList.contains('lifted'));
+  await p.mouse.up(); await p.waitForTimeout(400);
+  lib.report('Day view: the hold follows Android’s long-press delay (not lifted at 0.6 s, lifted at 1.2 s)', !early && late, JSON.stringify({ early, late }));
   await p.locator('ion-tab-button[tab="settings"]').click(); await p.waitForTimeout(400);
 
   // Tapping the notification (app already open) switches to the Timer tab.

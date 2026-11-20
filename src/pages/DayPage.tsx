@@ -11,6 +11,7 @@ import { ConstraintError, freeBounds, saveInterval } from '../constraints';
 import { useActive, useAreas, useNow, useSubAreas, useToast } from '../hooks';
 import { useEditUndo } from '../editUndo';
 import { haptic } from '../haptics';
+import { longPressMs } from '../longPress';
 import { iconFor } from '../icons';
 import { formatDuration } from '../timer';
 import { MINUTE, addLocalDays, atLocalTime, hourMarks, localDateKey, startOfLocalDay } from '../time';
@@ -239,10 +240,9 @@ export default function DayPage() {
     };
   }, [selectedId, intervals]);
 
-  // Dragging is deliberate: on a selected block, a short hold lifts it (vibration +
+  // Dragging is deliberate: on a selected block, a hold (Android's long-press delay) lifts it (vibration +
   // shadow) and only then does it follow the finger. Moving before that scrolls the
   // page as usual; a quick tap opens the editor; a hold released in place does nothing.
-  const HOLD_MS = 300;
   const SLOP = 8; // px of movement that cancels a hold (it's a scroll)
   const drag = useRef<{ id: string; mode: DragMode; y0: number; s0: number; e0: number; armed: boolean; moved: boolean } | null>(null);
   const [lifted, setLifted] = useState<string | null>(null);
@@ -260,7 +260,7 @@ export default function DayPage() {
       d0.armed = true;
       setLifted(b.id);
       haptic('long');
-    }, HOLD_MS);
+    }, longPressMs());
     // Once armed, the page must not scroll under the finger.
     const blockScroll = (ev: TouchEvent) => {
       if (drag.current === d0 && d0.armed && ev.cancelable) ev.preventDefault();
