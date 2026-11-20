@@ -10,6 +10,7 @@ import { db, intervalsOverlapping, type Interval } from '../db';
 import { ConstraintError, freeBounds, saveInterval } from '../constraints';
 import { useActive, useAreas, useNow, useSubAreas, useToast } from '../hooks';
 import { useEditUndo } from '../editUndo';
+import { haptic } from '../haptics';
 import { iconFor } from '../icons';
 import { formatDuration } from '../timer';
 import { MINUTE, addLocalDays, atLocalTime, hourMarks, localDateKey, startOfLocalDay } from '../time';
@@ -258,7 +259,7 @@ export default function DayPage() {
       if (drag.current !== d0) return;
       d0.armed = true;
       setLifted(b.id);
-      navigator.vibrate?.(15);
+      haptic('long');
     }, HOLD_MS);
     // Once armed, the page must not scroll under the finger.
     const blockScroll = (ev: TouchEvent) => {
@@ -317,7 +318,7 @@ export default function DayPage() {
         // The browser fires a click after pointerup; don't let it deselect or open the editor.
         suppressClickUntil.current = Date.now() + 400;
         if (!d.moved || !dr) return void setDraft(null);
-        navigator.vibrate?.(8);
+        haptic('confirm');
         const iv = await db.intervals.get(dr.id);
         const name = areaName(iv?.areaId);
         try {
@@ -463,7 +464,7 @@ export default function DayPage() {
                 e.stopPropagation();
                 if (b.active) openEditor(b);
                 else if (!selected) {
-                  navigator.vibrate?.(6);
+                  haptic('tick');
                   setSelectedId(b.id);
                 }
               };
@@ -479,6 +480,7 @@ export default function DayPage() {
                       style={{ top: chipTop, height: CHIP_H, ['--area-color' as string]: color, ['--on-area' as string]: ink }}
                       onClick={onClick}
                       onPointerDown={(e) => beginDrag(e, b, 'move')}
+                      onContextMenu={(e) => e.preventDefault()}
                       title={`${label} ${hhmm(b.start)}–${b.active ? 'now' : hhmm(b.end)}${b.note ? `\n${b.note}` : ''}`}
                     >
                       {area && <IonIcon icon={iconFor(area.icon)} />}
@@ -502,6 +504,7 @@ export default function DayPage() {
                   }}
                   onClick={onClick}
                   onPointerDown={(e) => beginDrag(e, b, 'move')}
+                  onContextMenu={(e) => e.preventDefault()}
                 >
                   <div className="day-block-title">
                     {area && <IonIcon icon={iconFor(area.icon)} />}

@@ -71,6 +71,10 @@ on launch/resume and shows an "App updated" toast.
   snackbar "<what> · Undo", one step, separate from the Timer's ↶ ↷ but the same
   snapshot-and-verify (`recordEdit`/`undoLastEdit` in `src/undo.ts`); leaving the
   Day view forgets it. While the snackbar is up, the + FAB moves above it.
+- Haptics only via `haptic()` (`src/haptics.ts`): the Android app's system haptics
+  (`TimeTrackerPlugin.haptic`, no permission; the WebView's own haptics are off so
+  there's no stray long-press buzz), `navigator.vibrate` in the browser. Day blocks
+  have no long-press callout/selection.
 - Tab switches: opacity-only fade (scaling would open a gap at the top). The status
   bar matches the top of the visible page and crossfades with it (MutationObserver +
   underlay of the old page's colours). Keep `PAGE_FADE` in `App.tsx` and the CSS

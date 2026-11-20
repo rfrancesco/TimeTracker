@@ -15,8 +15,8 @@ import { recordTimerAction, redo, undo, useUndoRedo } from '../undo';
 import { iconFor } from '../icons';
 import { startOfLocalDay } from '../time';
 import { ticksInApp } from '../runningTime';
+import { haptic } from '../haptics';
 
-const haptic = () => navigator.vibrate?.(12);
 
 
 export default function TimerPage() {
@@ -80,7 +80,7 @@ export default function TimerPage() {
     }, HOLD_SHOW);
     pressTimer.current = window.setTimeout(() => {
       longPressed.current = true;
-      navigator.vibrate?.(25);
+      haptic('long');
       setHolding(false);
       setMode({ kind: 'stop' });
       setStopSheet(true);
@@ -111,7 +111,7 @@ export default function TimerPage() {
       setAreaHold(a);
     }, HOLD_SHOW);
     areaDoneTimer.current = window.setTimeout(() => {
-      navigator.vibrate?.(25);
+      haptic('long');
       setAreaHold(null);
       const switching = active && a.id !== active.areaId;
       setMode(switching ? { kind: 'switch', area: a } : { kind: 'start', area: a, min: lastEnd, afterName: last ? nameOf(last.areaId) : undefined });

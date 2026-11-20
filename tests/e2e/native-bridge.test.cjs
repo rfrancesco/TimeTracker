@@ -15,7 +15,7 @@ const FAKE_NATIVE = () => {
   const getPending = () => JSON.parse(sessionStorage.getItem(KEY) || 'null');
   const setPending = (v) => (v ? sessionStorage.setItem(KEY, JSON.stringify(v)) : sessionStorage.removeItem(KEY));
   const oldApk = !!window.__oldApk; // an APK from before peek/clear existed
-  const promise = ['showTimer', 'hideTimer', 'takePendingStop', 'shareFile', 'status', 'openNotificationSettings', 'removeListener', ...(oldApk ? [] : ['peekPendingStop', 'clearPendingStop'])];
+  const promise = ['showTimer', 'hideTimer', 'takePendingStop', 'shareFile', 'status', 'openNotificationSettings', 'removeListener', ...(oldApk ? [] : ['peekPendingStop', 'clearPendingStop', 'haptic'])];
   window.Capacitor = {
     PluginHeaders: [{ name: 'TimeTracker', methods: [...promise.map((name) => ({ name, rtype: 'promise' })), { name: 'addListener', rtype: 'callback' }] }],
     nativePromise(_plugin, method, opts) {
@@ -55,7 +55,7 @@ const FAKE_NATIVE = () => {
   await p.waitForTimeout(500);
 
   const db = () => p.evaluate(() => new Promise((r) => { const q = indexedDB.open('timetracker'); q.onsuccess = () => { const t = q.result.transaction(['intervals', 'active', 'areas']); t.objectStore('areas').getAll().onsuccess = (e0) => { const n = Object.fromEntries(e0.target.result.map((a) => [a.id, a.name])); t.objectStore('intervals').getAll().onsuccess = (e) => { t.objectStore('active').get('current').onsuccess = (e2) => { const f = (s) => new Date(s).toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' }); const a = e2.target.result; r(`[${e.target.result.sort((x, y) => x.start.localeCompare(y.start)).map((i) => n[i.areaId] + ' ' + f(i.start) + '–' + f(i.end)).join(', ')}] ${a ? '▶ ' + n[a.areaId] + ' since ' + f(a.start) : 'idle'}`); }; }; }; }; }));
-  const calls = () => p.evaluate(() => window.__calls.filter(([m]) => !['takePendingStop', 'peekPendingStop', 'clearPendingStop'].includes(m)));
+  const calls = () => p.evaluate(() => window.__calls.filter(([m]) => !['takePendingStop', 'peekPendingStop', 'clearPendingStop', 'haptic'].includes(m)));
   const last = async () => (await calls()).at(-1);
   const activeStart = () => p.evaluate(() => new Promise((r) => { const q = indexedDB.open('timetracker'); q.onsuccess = () => { q.result.transaction('active').objectStore('active').get('current').onsuccess = (e) => r(e.target.result && Date.parse(e.target.result.start)); }; }));
   const tap = async (name) => { await p.locator(`.timer-layout .area-pill-btn[aria-label="${name}"]`).click(); await p.waitForTimeout(400); };
@@ -68,6 +68,8 @@ const FAKE_NATIVE = () => {
 
   await tap('Guitar');
   const start = await activeStart();
+  const haptics = await p.evaluate(() => window.__calls.filter(([m]) => m === 'haptic').map(([, o]) => o.kind));
+  lib.report('tapping an area asks the app for a system haptic (light tick)', haptics.includes('tick'), JSON.stringify(haptics));
   let l = await last();
   const guitarColor = await p.evaluate(() => new Promise((r) => { const q = indexedDB.open('timetracker'); q.onsuccess = () => { q.result.transaction('areas').objectStore('areas').getAll().onsuccess = (e) => r(e.target.result.find((a) => a.name === 'Guitar').color); }; }));
   lib.report('start → showTimer with the start time, area name and stored colour', l[0] === 'showTimer' && l[1].start === start && l[1].title === 'Guitar' && l[1].color === guitarColor, j(l));

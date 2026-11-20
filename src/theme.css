@@ -695,3 +695,6 @@ ion-tabs .ion-page:not(.ion-page-hidden) {
 /* While the Day view's Undo snackbar is up, the + button moves above it. */
 ion-fab { transition: transform 200ms ease-out; }
 body.snackbar-up ion-fab { transform: translateY(-64px); }
+
+/* Day view blocks: no text selection or long-press callout (the hold is ours). */
+.day-block, .day-chip { -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; }

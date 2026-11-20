@@ -56,6 +56,7 @@ interface TimeTrackerPlugin {
   clearPendingStop(o: { start: number }): Promise<void>; // …and forget once applied
   shareFile(o: { name: string; text: string; mimeType?: string }): Promise<void>;
   status(): Promise<NativeStatus>;
+  haptic(o: { kind: 'tick' | 'long' | 'confirm' }): Promise<void>; // newer APKs
   openNotificationSettings(): Promise<void>;
   addListener(event: 'stop' | 'openTimer', fn: () => void): Promise<PluginListenerHandle>;
 }
