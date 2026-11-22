@@ -8,7 +8,7 @@ const S = lib.OUT;
   await p.clock.install({ time: new Date('2026-11-15T09:00:00') });
   await p.goto(lib.BASE);
   await p.waitForSelector('.area-pill-btn');
-  const count = () => p.evaluate(() => new Promise(r => { const q = indexedDB.open('timetracker'); q.onsuccess = () => { const t = q.result.transaction(['intervals','active','areas','subAreas']); const res = {}; let n = 0; for (const s of ['intervals','active','areas','subAreas']) { const g = t.objectStore(s).getAll(); g.onsuccess = () => { res[s] = g.result; if (++n === 4) r({ intervals: res.intervals.length, active: res.active.length, areas: res.areas.sort((a,b)=>a.order-b.order).map(a => a.name + (res.subAreas.some(s=>s.areaId===a.id) ? '(' + res.subAreas.filter(s=>s.areaId===a.id).length + ')' : '')).join(' ') }); }; } }; }));
+  const count = () => lib.read(p, ({ intervals, active, areas, subs }) => ({ intervals: intervals.length, active: active ? 1 : 0, areas: areas.sort((a, b) => a.order - b.order).map((a) => { const n = subs.filter((s) => s.areaId === a.id).length; return a.name + (n ? `(${n})` : ''); }).join(' ') }));
   console.log('defaults:', JSON.stringify(await count()));
   const btn = n => p.locator(`.area-pill-btn[aria-label="${n}"]`);
   const stop = () => p.locator('.stop-button').click();

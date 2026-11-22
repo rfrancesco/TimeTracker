@@ -6,7 +6,7 @@ const { chromium, devices } = require('playwright');
   const errs = []; p.on('pageerror', e => errs.push(e.message));
   await p.clock.install({ time: new Date('2026-11-16T18:00:00+01:00') });
   await p.goto(lib.BASE); await p.waitForSelector('.area-pill-btn');
-  const db = () => p.evaluate(() => new Promise(r => { const q = indexedDB.open('timetracker'); q.onsuccess = () => { const t = q.result.transaction(['intervals', 'active']); t.objectStore('intervals').getAll().onsuccess = e => { t.objectStore('active').get('current').onsuccess = e2 => { const f = s => new Date(s).toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' }); r(`intervals: [${e.target.result.map(i => f(i.start) + '–' + f(i.end)).join(', ')}] | running: ${e2.target.result ? 'since ' + f(e2.target.result.start) : 'none'}`); }; }; }; }));
+  const db = () => lib.read(p, ({ intervals, active }) => { const f = (s) => new Date(s).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }); return `intervals: [${intervals.map((i) => f(i.start) + '–' + f(i.end)).join(', ')}] | running: ${active ? 'since ' + f(active.start) : 'none'}`; });
   const toastMsg = () => p.evaluate(() => [...document.querySelectorAll('ion-toast')].map(t => t.message).pop() || '(none)');
   const clickUndo = () => p.locator('.undo-button').click();
   // ---- tap Stop + undo

@@ -9,10 +9,10 @@ const { chromium, devices } = require('playwright');
   const errs = []; p.on('pageerror', (e) => errs.push(e.message));
   await p.clock.install({ time: new Date('2026-11-16T18:35:00+01:00') });
   await p.goto(lib.BASE); await p.waitForSelector('.area-pill-btn');
-  await p.evaluate(() => new Promise((r) => { const q = indexedDB.open('timetracker'); q.onsuccess = () => { const t = q.result.transaction(['areas', 'intervals'], 'readwrite'); t.objectStore('areas').getAll().onsuccess = (e) => { const th = e.target.result.find((a) => a.name === 'Thesis'); t.objectStore('intervals').put({ id: 'th', areaId: th.id, subAreaId: null, start: '2026-11-16T15:00:00.000Z', end: '2026-11-16T16:30:00.000Z', updatedAt: 'x' }); }; t.oncomplete = r; }; }));
+  await lib.seed(p, { intervals: [{ id: 'th', area: 'Thesis', start: '2026-11-16T15:00:00.000Z', end: '2026-11-16T16:30:00.000Z' }] });
   await p.reload(); await p.waitForSelector('.area-pill-btn'); await p.waitForTimeout(500);
 
-  const db = () => p.evaluate(() => new Promise((r) => { const q = indexedDB.open('timetracker'); q.onsuccess = () => { const t = q.result.transaction(['intervals', 'active', 'areas', 'subAreas']); t.objectStore('areas').getAll().onsuccess = (e0) => { const n = Object.fromEntries(e0.target.result.map((a) => [a.id, a.name])); t.objectStore('subAreas').getAll().onsuccess = (e1) => { const sn = Object.fromEntries(e1.target.result.map((s) => [s.id, s.name])); const lab = (x) => n[x.areaId] + (x.subAreaId ? ' · ' + sn[x.subAreaId] : ''); t.objectStore('intervals').getAll().onsuccess = (e) => { t.objectStore('active').get('current').onsuccess = (e2) => { const f = (s) => new Date(s).toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' }); const a = e2.target.result; r(`[${e.target.result.sort((x, y) => x.start.localeCompare(y.start)).map((i) => lab(i) + ' ' + f(i.start) + '–' + f(i.end)).join(', ')}] ${a ? '▶ ' + lab(a) + ' since ' + f(a.start) : 'idle'}`); }; }; }; }; }; }));
+  const db = () => lib.timeline(p);
   const pill = (name) => p.locator(`.timer-layout .area-pill-btn[aria-label="${name}"]`);
   const subChip = (name) => p.locator('.timer-layout .sub-chips ion-chip', { hasText: new RegExp(`^${name}$`) });
   const hold = async (loc, ms = 800) => { const r = await loc.boundingBox(); await p.mouse.move(r.x + r.width / 2, r.y + r.height / 2); await p.mouse.down(); await p.waitForTimeout(ms); await p.mouse.up(); await p.waitForTimeout(400); };

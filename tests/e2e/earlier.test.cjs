@@ -10,10 +10,10 @@ const { chromium, devices } = require('playwright');
   await p.clock.install({ time: new Date('2026-11-16T18:35:00+01:00') });
   await p.goto(lib.BASE); await p.waitForSelector('.area-pill-btn');
   // history: Thesis 16:00–17:30
-  await p.evaluate(() => new Promise((r) => { const q = indexedDB.open('timetracker'); q.onsuccess = () => { const t = q.result.transaction(['areas', 'intervals'], 'readwrite'); t.objectStore('areas').getAll().onsuccess = (e) => { const th = e.target.result.find((a) => a.name === 'Thesis'); t.objectStore('intervals').put({ id: 'th', areaId: th.id, subAreaId: null, start: '2026-11-16T15:00:00.000Z', end: '2026-11-16T16:30:00.000Z', updatedAt: '2026-11-16T16:30:00.000Z' }); }; t.oncomplete = r; }; }));
+  await lib.seed(p, { intervals: [{ id: 'th', area: 'Thesis', start: '2026-11-16T15:00:00.000Z', end: '2026-11-16T16:30:00.000Z' }] });
   await p.reload(); await p.waitForSelector('.area-pill-btn'); await p.waitForTimeout(500);
 
-  const db = () => p.evaluate(() => new Promise((r) => { const q = indexedDB.open('timetracker'); q.onsuccess = () => { const t = q.result.transaction(['intervals', 'active', 'areas']); t.objectStore('areas').getAll().onsuccess = (e0) => { const n = Object.fromEntries(e0.target.result.map((a) => [a.id, a.name])); t.objectStore('intervals').getAll().onsuccess = (e) => { t.objectStore('active').get('current').onsuccess = (e2) => { const f = (s) => new Date(s).toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' }); const a = e2.target.result; r(`[${e.target.result.sort((x, y) => x.start.localeCompare(y.start)).map((i) => n[i.areaId] + ' ' + f(i.start) + '–' + f(i.end)).join(', ')}] ${a ? '▶ ' + n[a.areaId] + ' since ' + f(a.start) : 'idle'}`); }; }; }; }; }));
+  const db = () => lib.timeline(p);
   const pill = (name) => p.locator(`.timer-layout .area-pill-btn[aria-label="${name}"]`);
   const press = async (name, ms) => { const r = await pill(name).boundingBox(); await p.mouse.move(r.x + r.width / 2, r.y + r.height / 2); await p.mouse.down(); await p.waitForTimeout(ms); };
   const release = async () => { await p.mouse.up(); await p.waitForTimeout(400); };
@@ -68,7 +68,7 @@ const { chromium, devices } = require('playwright');
   await press('Guitar', 800); await release(); await p.waitForSelector(`${sheet} .sheet-title`);
   await chip('30 min ago').click(); await p.waitForTimeout(200); await apply.click(); await sheetGone(); await p.waitForTimeout(500);
   lib.report('Start at 18:05 via “30 min ago”', (await db()) === `${BASE} ▶ Guitar since 18:05`, await db());
-  const elapsed = await p.evaluate(() => new Promise((r) => { const q = indexedDB.open('timetracker'); q.onsuccess = () => { q.result.transaction('active').objectStore('active').get('current').onsuccess = (e) => r(Date.now() - Date.parse(e.target.result.start)); }; }));
+  const elapsed = (await p.evaluate(() => Date.now())) - (await lib.activeStart(p));
   lib.report('…exactly 30:00 before the tap (seconds kept, no jump to a whole minute)', elapsed >= 30 * 60000 && elapsed < 30 * 60000 + 3000, `${elapsed / 1000} s`);
 
   // 4. Running: hold another area → "When did you switch to Reading?" (counts back from now)
@@ -95,7 +95,7 @@ const { chromium, devices } = require('playwright');
   const rsChips = await p.locator(`${sheet} .sheet-times ion-chip`).evaluateAll((es) => es.map((e) => `${e.innerText}:${e.disabled ? 'off' : 'on'}`).join(' '));
   lib.report('…chips count back from the start (“earlier”); 1 h earlier would overlap Thesis → greyed', rsChips === 'After Thesis:on 5 min earlier:on 15 min earlier:on 30 min earlier:on 1 h earlier:off', rsChips);
   lib.report('…default: 5 min earlier than the start (18:00)', /Start at (18:00|06:00 PM)/i.test(await applyText()), await applyText());
-  const startMs = () => p.evaluate(() => new Promise((r) => { const q = indexedDB.open('timetracker'); q.onsuccess = () => { q.result.transaction('active').objectStore('active').get('current').onsuccess = (e) => r(Date.parse(e.target.result.start)); }; }));
+  const startMs = () => lib.activeStart(p);
   const s0 = await startMs();
   await apply.click(); await sheetGone(); await p.waitForTimeout(500);
   const s1 = await startMs();

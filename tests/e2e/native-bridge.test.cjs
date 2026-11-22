@@ -54,10 +54,10 @@ const FAKE_NATIVE = () => {
   await p.waitForSelector('.area-pill-btn');
   await p.waitForTimeout(500);
 
-  const db = () => p.evaluate(() => new Promise((r) => { const q = indexedDB.open('timetracker'); q.onsuccess = () => { const t = q.result.transaction(['intervals', 'active', 'areas']); t.objectStore('areas').getAll().onsuccess = (e0) => { const n = Object.fromEntries(e0.target.result.map((a) => [a.id, a.name])); t.objectStore('intervals').getAll().onsuccess = (e) => { t.objectStore('active').get('current').onsuccess = (e2) => { const f = (s) => new Date(s).toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' }); const a = e2.target.result; r(`[${e.target.result.sort((x, y) => x.start.localeCompare(y.start)).map((i) => n[i.areaId] + ' ' + f(i.start) + '–' + f(i.end)).join(', ')}] ${a ? '▶ ' + n[a.areaId] + ' since ' + f(a.start) : 'idle'}`); }; }; }; }; }));
+  const db = () => lib.timeline(p);
   const calls = () => p.evaluate(() => window.__calls.filter(([m]) => !['takePendingStop', 'peekPendingStop', 'clearPendingStop', 'haptic', 'status'].includes(m)));
   const last = async () => (await calls()).at(-1);
-  const activeStart = () => p.evaluate(() => new Promise((r) => { const q = indexedDB.open('timetracker'); q.onsuccess = () => { q.result.transaction('active').objectStore('active').get('current').onsuccess = (e) => r(e.target.result && Date.parse(e.target.result.start)); }; }));
+  const activeStart = () => lib.activeStart(p);
   const tap = async (name) => { await p.locator(`.timer-layout .area-pill-btn[aria-label="${name}"]`).click(); await p.waitForTimeout(400); };
   const j = (x) => JSON.stringify(x, (k, v) => (k === 'icon' && typeof v === 'string' ? `<png ${v.length} b64>` : v));
   const ff = (min) => p.clock.fastForward(min * 60000);
@@ -71,7 +71,7 @@ const FAKE_NATIVE = () => {
   const haptics = await p.evaluate(() => window.__calls.filter(([m]) => m === 'haptic').map(([, o]) => o.kind));
   lib.report('tapping an area asks the app for a system haptic (light tick)', haptics.includes('tick'), JSON.stringify(haptics));
   let l = await last();
-  const guitarColor = await p.evaluate(() => new Promise((r) => { const q = indexedDB.open('timetracker'); q.onsuccess = () => { q.result.transaction('areas').objectStore('areas').getAll().onsuccess = (e) => r(e.target.result.find((a) => a.name === 'Guitar').color); }; }));
+  const guitarColor = await lib.read(p, ({ areas }) => areas.find((a) => a.name === 'Guitar').color);
   lib.report('start → showTimer with the start time, area name and stored colour', l[0] === 'showTimer' && l[1].start === start && l[1].title === 'Guitar' && l[1].color === guitarColor, j(l));
 
   // The area's icon travels as a white-on-transparent PNG, plus the readable ink for the badge.
@@ -166,13 +166,13 @@ const FAKE_NATIVE = () => {
 
   // Two per-area settings: Running time (Appearance: Off / App only / On) and
   // Live updates (Android app: on/off). A live update ticks only for running time On.
-  const areaFlags = () => p.evaluate(() => new Promise((r) => { const q = indexedDB.open('timetracker'); q.onsuccess = () => { q.result.transaction('areas').objectStore('areas').getAll().onsuccess = (e) => r(Object.fromEntries(e.target.result.map((a) => [a.name, { rt: a.runningTime, lu: a.liveUpdate, legacy: a.liveUpdates }]))); }; }));
+  const areaFlags = () => lib.read(p, ({ areas }) => Object.fromEntries(areas.map((a) => [a.name, { rt: a.runningTime, lu: a.liveUpdate, legacy: a.liveUpdates }])));
   const lastShow = async () => (await calls()).filter(([m]) => m === 'showTimer').at(-1)?.[1];
   const openDlg = async (row, cls) => { await p.locator('ion-item', { hasText: new RegExp(`^${row}`) }).first().click(); await p.waitForSelector(`ion-modal.${cls} ion-title`); await p.waitForTimeout(400); };
   const closeDlg = async (cls) => { await p.locator(`ion-modal.${cls}`).getByRole('button', { name: 'Close' }).click(); await p.waitForSelector(`ion-modal.${cls} ion-title`, { state: 'detached' }); await p.waitForTimeout(300); };
   const rtChip = (area, label) => p.locator(`ion-modal.running-time-dialog [aria-label="${area} running time"] ion-chip`, { hasText: new RegExp(`^${label}$`) });
 
-  const icons = await p.evaluate(() => new Promise((r) => { const q = indexedDB.open('timetracker'); q.onsuccess = () => { q.result.transaction('areas').objectStore('areas').getAll().onsuccess = (e) => r(Object.fromEntries(e.target.result.map((a) => [a.name, a.icon]))); }; }));
+  const icons = await lib.read(p, ({ areas }) => Object.fromEntries(areas.map((a) => [a.name, a.icon])));
   lib.report('fresh install: Hobby has the palette icon, Self-care the paw', icons.Hobby === 'color-palette' && icons['Self-care'] === 'paw', JSON.stringify([icons.Hobby, icons['Self-care']]));
   // Running time dialog: three chips per area in the Android app, all On by default.
   await openDlg('Running time', 'running-time-dialog');
@@ -209,7 +209,7 @@ const FAKE_NATIVE = () => {
   const sl = await run('Sleep');
   lib.report('Sleep (time off, live update on) → icon-only live update', sl?.title === 'Sleep' && sl.promote === true && sl.showTime === false, j(sl));
   const quiet = { caption: await p.locator('.timer-caption').innerText(), number: await p.locator('.timer-digits').innerText(), muted: await p.locator('.timer-digits').evaluate((e) => e.classList.contains('quiet')), tab: await p.locator('ion-tab-button[tab="timer"]').innerText(), today: await p.locator('.today-row', { hasText: 'Sleep' }).innerText() };
-  const startHm = await p.evaluate(() => new Promise((r) => { const q = indexedDB.open('timetracker'); q.onsuccess = () => { q.result.transaction('active').objectStore('active').get('current').onsuccess = (e) => r(new Date(e.target.result.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })); }; }));
+  const startHm = await lib.read(p, ({ active }) => new Date(active.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
   lib.report('…and in the app: “Started at” over the muted start time; the start time in the tab', quiet.caption.trim() === 'Started at' && quiet.number.trim() === startHm && quiet.muted && quiet.tab.trim() === startHm, JSON.stringify(quiet));
   lib.report('…while Today keeps the real total', /\d+m$/.test(quiet.today.replace(/\s+/g, ' ').trim()) && !/since/i.test(quiet.today), quiet.today.replace(/\s+/g, ' '));
   // Nothing else moves between a quiet and a ticking area (at two screen widths).
@@ -269,11 +269,11 @@ const FAKE_NATIVE = () => {
   const po = await oldCtx.newPage(); po.on('pageerror', (e) => errs.push(e.message));
   await po.goto(lib.BASE); await po.waitForSelector('.area-pill-btn');
   await po.locator('.timer-layout .area-pill-btn[aria-label="Reading"]').click(); await po.waitForSelector('.stop-button'); await po.waitForTimeout(300);
-  const so = await po.evaluate(() => new Promise((r) => { const q = indexedDB.open('timetracker'); q.onsuccess = () => { q.result.transaction('active').objectStore('active').get('current').onsuccess = (e) => r(Date.parse(e.target.result.start)); }; }));
+  const so = await lib.activeStart(po);
   await po.evaluate(([s]) => window.__notificationStop(s - 0, s + 5 * 60000), [so - 10 * 60000]); // a stale one first: ignored
   await po.evaluate(([s]) => window.__notificationStop(s, Date.now()), [so]);
   await po.waitForTimeout(700);
-  const oldState = await po.evaluate(() => new Promise((r) => { const q = indexedDB.open('timetracker'); q.onsuccess = () => { q.result.transaction('active').objectStore('active').get('current').onsuccess = (e) => r(e.target.result ? 'running' : 'stopped'); }; }));
+  const oldState = await lib.read(po, ({ active }) => (active ? 'running' : 'stopped'));
   const usedTake = await po.evaluate(() => window.__calls.some(([m]) => m === 'takePendingStop') && !window.__calls.some(([m]) => m === 'peekPendingStop' && false));
   lib.report('older APK (no peek/clear): the stop is applied via takePendingStop', oldState === 'stopped' && usedTake, oldState);
   await oldCtx.close();

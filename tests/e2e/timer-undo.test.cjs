@@ -8,7 +8,7 @@ const { chromium, devices } = require('playwright');
   const errs = []; p.on('pageerror', e => errs.push(e.message));
   await p.clock.install({ time: new Date('2026-11-16T18:00:00+01:00') });
   await p.goto(lib.BASE); await p.waitForSelector('.area-pill-btn');
-  const db = () => p.evaluate(() => new Promise(r => { const q = indexedDB.open('timetracker'); q.onsuccess = () => { const t = q.result.transaction(['intervals', 'active', 'areas']); t.objectStore('areas').getAll().onsuccess = e0 => { const n = Object.fromEntries(e0.target.result.map(a => [a.id, a.name])); t.objectStore('intervals').getAll().onsuccess = e => { t.objectStore('active').get('current').onsuccess = e2 => { const f = s => new Date(s).toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' }); const a = e2.target.result; r(`[${e.target.result.sort((x, y) => x.start.localeCompare(y.start)).map(i => n[i.areaId] + ' ' + f(i.start) + '–' + f(i.end)).join(', ')}] ${a ? '▶ ' + n[a.areaId] + ' since ' + f(a.start) : 'idle'}`); }; }; }; }; }));
+  const db = () => lib.timeline(p);
   const tap = async (name) => { await p.locator(`.timer-layout .area-pill-btn[aria-label="${name}"]`).click(); await p.waitForTimeout(400); };
   const undo = async () => { await p.locator('.undo-button').click(); await p.waitForTimeout(500); };
   const undoShown = () => p.locator('.undo-button').evaluate(e => e.classList.contains('show'));

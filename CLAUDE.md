@@ -120,6 +120,8 @@ on launch/resume and shows an "App updated" toast.
   under it); Ionic sets `value`/`aria-label` as properties or moves them to inner
   inputs; a plain static server has no SPA fallback (load `/`, not `/day`); wait for
   the UI to reflect a DB write before measuring.
+- Database access in tests: `lib.seed` (by area/sub-area name), `lib.timeline` ("[Thesis
+  16:00–17:30] ▶ Guitar since 18:05"), `lib.read`, `lib.activeStart`, `lib.patchInterval`.
 - Tests use a 5 s default timeout (`lib.cjs`); pass a longer one only where a step is
   really slow. Never probe for something optional with a waiting locator plus
   `.catch()` (it silently costs the whole timeout): check `count()` or wait for the

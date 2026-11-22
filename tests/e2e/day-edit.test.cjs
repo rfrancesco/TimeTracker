@@ -8,12 +8,12 @@ const { chromium, devices } = require('playwright');
   const errs = []; p.on('pageerror', (e) => errs.push(e.message));
   await p.clock.install({ time: new Date('2026-11-16T18:00:00+01:00') });
   await p.goto(lib.BASE); await p.waitForSelector('.area-pill-btn');
-  await p.evaluate(() => new Promise((r) => { const q = indexedDB.open('timetracker'); q.onsuccess = () => { const t = q.result.transaction(['areas', 'intervals'], 'readwrite'); t.objectStore('areas').getAll().onsuccess = (e) => { const by = Object.fromEntries(e.target.result.map((a) => [a.name, a.id])); const st = t.objectStore('intervals'); st.put({ id: 'w', areaId: by.Work, subAreaId: null, start: '2026-11-16T08:00:00.000Z', end: '2026-11-16T11:00:00.000Z', updatedAt: 'x' }); st.put({ id: 'r', areaId: by.Reading, subAreaId: null, start: '2026-11-16T13:00:00.000Z', end: '2026-11-16T14:00:00.000Z', updatedAt: 'x' }); }; t.oncomplete = r; }; }));
+  await lib.seed(p, { intervals: [{ id: 'w', area: 'Work', start: '2026-11-16T08:00:00.000Z', end: '2026-11-16T11:00:00.000Z' }, { id: 'r', area: 'Reading', start: '2026-11-16T13:00:00.000Z', end: '2026-11-16T14:00:00.000Z' }] });
   await p.reload(); await p.waitForSelector('.area-pill-btn');
   await p.evaluate(() => { window.__toasts = []; document.addEventListener('ionToastWillPresent', (e) => window.__toasts.push(e.target.message)); });
   await p.locator('ion-tab-button[tab="day"]').click(); await p.waitForTimeout(800);
 
-  const db = () => p.evaluate(() => new Promise((r) => { const q = indexedDB.open('timetracker'); q.onsuccess = () => { const t = q.result.transaction(['intervals', 'areas']); t.objectStore('areas').getAll().onsuccess = (e0) => { const n = Object.fromEntries(e0.target.result.map((a) => [a.id, a.name])); t.objectStore('intervals').getAll().onsuccess = (e) => { const f = (s) => new Date(s).toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' }); r(e.target.result.sort((x, y) => x.start.localeCompare(y.start)).map((i) => `${n[i.areaId]} ${f(i.start)}–${f(i.end)}`).join(', ')); }; }; }; }));
+  const db = async () => (await lib.timeline(p)).replace(/^\[(.*)\] idle$/, '$1');
   const toasts = () => p.evaluate(() => window.__toasts.slice());
   const lastToast = async () => (await toasts()).at(-1);
   const block = (name) => p.locator('.day-block', { hasText: name });
@@ -72,7 +72,7 @@ const { chromium, devices } = require('playwright');
   [x, y] = await centre(block('Reading'));
   await p.mouse.move(x, y); await p.mouse.down(); await p.waitForTimeout(450); await p.mouse.move(x, y + 30 * px, { steps: 6 }); await p.mouse.up(); await p.waitForTimeout(700);
   const moved = await db();
-  await p.evaluate(() => new Promise((r) => { const q = indexedDB.open('timetracker'); q.onsuccess = () => { const t = q.result.transaction('intervals', 'readwrite'); const st = t.objectStore('intervals'); st.get('r').onsuccess = (e) => { const iv = e.target.result; iv.note = 'edited elsewhere'; st.put(iv); }; t.oncomplete = r; }; }));
+  await lib.patchInterval(p, 'r', { note: 'edited elsewhere' });
   await undoBtn().click(); await p.waitForTimeout(700);
   lib.report('Undo refuses when the data changed since, and changes nothing', (await db()) === moved && /Can’t undo/.test(await lastToast()), `${moved} | ${await lastToast()}`);
 

@@ -29,7 +29,7 @@ const S = lib.OUT;
   await btn('Reading').click(); await p.waitForTimeout(300);
   await p.clock.fastForward(15 * 60000);
   await p.waitForTimeout(300);
-  const counts = await p.evaluate(() => new Promise(r => { const q = indexedDB.open('timetracker'); q.onsuccess = () => { const t = q.result.transaction(['intervals','active']); const a = t.objectStore('intervals').getAll(); a.onsuccess = () => { const c = t.objectStore('active').getAll(); c.onsuccess = () => r({ intervals: a.result.map(i => [i.start.slice(11,19), i.end.slice(11,19), i.subAreaId?.slice(0,4)]), active: c.result }); }; }; }));
+  const counts = await lib.read(p, ({ intervals, active }) => ({ intervals: intervals.map((i) => [i.start.slice(11, 19), i.end.slice(11, 19), i.subAreaId?.slice(0, 4)]), active: active ? [active] : [] }));
   lib.report('switch after a minute saves intervals', counts.intervals.length === 2 && counts.active.length === 1, JSON.stringify(counts.intervals));
   await p.reload();
   await p.waitForSelector('.area-pill-btn');

@@ -5,7 +5,7 @@ const { chromium, devices } = require('playwright');
   const p = await (await b.newContext({ ...devices['Pixel 7'], colorScheme: 'dark' })).newPage();
   const errs = []; p.on('pageerror', e => errs.push(e.message));
   await p.goto(lib.BASE); await p.waitForSelector('.area-pill-btn');
-  const order = () => p.evaluate(() => new Promise(r => { const q = indexedDB.open('timetracker'); q.onsuccess = () => { const t = q.result.transaction(['areas', 'subAreas']); t.objectStore('areas').getAll().onsuccess = e => { const home = e.target.result.find(a => a.name === 'Home'); t.objectStore('subAreas').getAll().onsuccess = e2 => r(e2.target.result.filter(s => s.areaId === home.id).sort((a, b) => a.order - b.order).map(s => s.name).join(', ')); }; }; }));
+  const order = () => lib.read(p, ({ areas, subs }) => { const home = areas.find((a) => a.name === 'Home'); return subs.filter((s) => s.areaId === home.id).sort((a, b) => a.order - b.order).map((s) => s.name).join(', '); });
   console.log('before:', await order());
   await p.locator('ion-tab-button[tab="settings"]').click(); await p.waitForTimeout(500);
   await p.locator('ion-item', { hasText: 'Home' }).first().click(); await p.waitForTimeout(700);
