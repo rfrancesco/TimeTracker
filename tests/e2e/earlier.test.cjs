@@ -130,6 +130,30 @@ const { chromium, devices } = require('playwright');
   await p.keyboard.press('Escape'); await sheetGone(); await undo();
   lib.report('(undo → since 18:05)', (await db()) === `${BASE} ▶ Guitar since 18:05`, await db());
 
+  // 6c. Slow storage (as on the phone): the timer shows the new start at once, and never
+  // flashes back to the old value while the write and the live query catch up.
+  await p.evaluate(() => {
+    const d = Object.getOwnPropertyDescriptor(IDBTransaction.prototype, 'oncomplete'); window.__oncomplete = d;
+    Object.defineProperty(IDBTransaction.prototype, 'oncomplete', { configurable: true, get() { return d.get.call(this); }, set(fn) { d.set.call(this, fn && function (e) { setTimeout(() => fn.call(this, e), 700); }); } });
+  });
+  await press('Guitar', 800); await release(); await p.waitForSelector(`${sheet} .sheet-title`);
+  await chip('15 min earlier').click(); await p.waitForTimeout(200);
+  await p.evaluate(() => {
+    const d = document.querySelector('.timer-digits'); window.__seq = [];
+    const rec = () => window.__seq.push([Math.round(performance.now() - window.__click), d.innerText]);
+    new MutationObserver(rec).observe(document.querySelector('.timer-display'), { subtree: true, characterData: true, childList: true });
+    document.querySelector('ion-modal.stop-sheet .sheet-apply').addEventListener('click', () => { window.__click = performance.now(); window.__seq.push([0, d.innerText]); }, true);
+  });
+  await apply.click(); await sheetGone(); await p.waitForTimeout(2500);
+  const seq = await p.evaluate(() => window.__seq);
+  const mins = (t) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+  const firstJump = seq.find(([, t], i) => i > 0 && mins(t) - mins(seq[0][1]) >= 15);
+  const flashBack = seq.some(([ms, t]) => firstJump && ms > firstJump[0] && mins(t) - mins(seq[0][1]) < 15);
+  lib.report('slow storage: the timer jumps by 15 min right away and never flashes back', firstJump && firstJump[0] < 300 && !flashBack, seq.map(([ms, t]) => `${ms}:${t}`).join(' '));
+  lib.report('…and the write lands', (await db()) === `${BASE} ▶ Guitar since 17:50`, await db());
+  await p.evaluate(() => Object.defineProperty(IDBTransaction.prototype, 'oncomplete', window.__oncomplete));
+  await undo();
+
   // 7. Holding Stop still opens "When did you stop?" (the mode resets), default 5 min ago.
   const sb = await p.locator('.stop-button').boundingBox();
   await p.mouse.move(sb.x + sb.width / 2, sb.y + sb.height / 2); await p.mouse.down(); await p.waitForTimeout(800); await p.mouse.up();

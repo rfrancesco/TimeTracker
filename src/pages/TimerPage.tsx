@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
   IonButton, IonContent, IonIcon, IonPage,
@@ -6,11 +6,11 @@ import {
 import { arrowRedo, arrowUndo, playBack, stop as stopIcon } from 'ionicons/icons';
 import AreaPill from '../components/AreaPill';
 import SubAreaChips from '../components/SubAreaChips';
-import { db } from '../db';
+import { db, type ActiveTimer } from '../db';
 import { useActive, useAreas, useDarkMode, useNow, useSubAreas, useToast, type AreaView } from '../hooks';
 import StopEarlierSheet, { type RewindMode } from '../components/StopEarlierSheet';
 import { BACKGROUND_TINT, themeBackground, tintOverBackground } from '../color';
-import { discardActive, formatDuration, restartAt, startAt, stopAt, switchAt, track } from '../timer';
+import { discardActive, formatDuration, RELABEL_THRESHOLD_MS, restartAt, startAt, stopAt, switchAt, track } from '../timer';
 import { recordTimerAction, redo, undo, useUndoRedo } from '../undo';
 import { iconFor } from '../icons';
 import { startOfLocalDay } from '../time';
@@ -23,7 +23,31 @@ export default function TimerPage() {
   const areas = useAreas();
   const allAreas = useAreas(true);
   const subAreas = useSubAreas();
-  const active = useActive();
+  const dbActive = useActive();
+  // What a sheet action is about to store, shown at once: on the phone the undo
+  // snapshots + write take a noticeable moment, and the timer shouldn't lag the tap.
+  // Dropped once the database says the same (the live query can trail the action by a
+  // moment, so not simply when it resolves), at once if the action fails, and after a
+  // second in any case.
+  const [pending, setPending] = useState<{ active: ActiveTimer | null } | null>(null);
+  const active = pending ? (pending.active ?? undefined) : dbActive;
+  useEffect(() => {
+    const key = (a: ActiveTimer | null | undefined) => (a ? `${a.areaId} ${a.subAreaId} ${Date.parse(a.start)}` : '');
+    if (pending && key(dbActive) === key(pending.active)) setPending(null);
+  }, [dbActive, pending]);
+  async function showing<T>(next: ActiveTimer | null, action: () => Promise<T>) {
+    const mine = { active: next };
+    setPending(mine);
+    const drop = () => setPending((p) => (p === mine ? null : p));
+    try {
+      const result = await action();
+      window.setTimeout(drop, 1000);
+      return result;
+    } catch (e) {
+      drop();
+      throw e;
+    }
+  }
   // Tick every second while tracking, every minute otherwise (keeps "today" correct past midnight).
   const now = useNow(active && ticksInApp(allAreas.find((a) => a.id === active.areaId)) ? 1000 : 60_000);
 
@@ -48,12 +72,12 @@ export default function TimerPage() {
 
   async function doStop(endMs?: number) {
     const name = active ? nameOf(active.areaId) : 'timer';
-    await recordTimerAction(`${endMs !== undefined ? 'rewind' : 'stop'} ${name}`, () => stopAt(endMs));
+    await showing(null, () => recordTimerAction(`${endMs !== undefined ? 'rewind' : 'stop'} ${name}`, () => stopAt(endMs)));
   }
 
   async function doDiscard() {
     const name = active ? nameOf(active.areaId) : 'timer';
-    await recordTimerAction(`discard ${name}`, () => discardActive());
+    await showing(null, () => recordTimerAction(`discard ${name}`, () => discardActive()));
   }
 
   async function runHistory(step: typeof undo, word: string) {
@@ -126,14 +150,22 @@ export default function TimerPage() {
   const areaHoldLabel = areaHold && (active && areaHold.id !== active.areaId ? 'Switch earlier' : 'Start earlier');
 
   async function doStartEarlier(a: AreaView, ms: number) {
-    if (active?.areaId === a.id) await recordTimerAction(`start ${a.name} earlier`, () => restartAt(ms));
-    else await recordTimerAction(`start ${a.name} earlier`, () => startAt(a.id, null, ms));
+    const start = new Date(ms).toISOString();
+    if (active?.areaId === a.id) await showing({ ...active, start }, () => recordTimerAction(`start ${a.name} earlier`, () => restartAt(ms)));
+    else await showing({ key: 'current', areaId: a.id, subAreaId: null, start }, () => recordTimerAction(`start ${a.name} earlier`, () => startAt(a.id, null, ms)));
   }
   async function doSwitchEarlier(a: AreaView, ms: number) {
-    await recordTimerAction(`switch to ${a.name} earlier`, () => switchAt(a.id, null, ms));
+    // Same outcome as switchAt: a relabel under a minute after the start, else a new timer at `ms`.
+    const next: ActiveTimer | null = !active
+      ? null
+      : ms - Date.parse(active.start) < RELABEL_THRESHOLD_MS
+        ? { ...active, areaId: a.id, subAreaId: null }
+        : { key: 'current', areaId: a.id, subAreaId: null, start: new Date(ms).toISOString() };
+    await showing(next, () => recordTimerAction(`switch to ${a.name} earlier`, () => switchAt(a.id, null, ms)));
   }
   const subsOfActive = subAreas.filter((s) => s.areaId === active?.areaId && !s.archived);
-  const elapsed = active ? now - new Date(active.start).getTime() : 0;
+  // The current moment, not the last tick's: right after a change the digits are exact.
+  const elapsed = active ? Math.max(now, Date.now()) - new Date(active.start).getTime() : 0;
   const ticking = ticksInApp(activeArea);
   const sinceText = active ? new Date(active.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
 

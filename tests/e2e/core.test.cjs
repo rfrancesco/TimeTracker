@@ -34,7 +34,7 @@ const S = lib.OUT;
   await p.reload();
   await p.waitForSelector('.area-pill-btn');
   await p.waitForTimeout(500);
-  { const l = await p.locator('.timer-label').innerText(), d = await p.locator('.timer-digits').innerText(); lib.report('running timer survives a reload', l.includes('Reading') && d === '0:15:00', `${l} ${d}`); }
+  { const l = await p.locator('.timer-label').innerText(), d = await p.locator('.timer-digits').innerText(); lib.report('running timer survives a reload', l.includes('Reading') && /^0:15:0[01]$/.test(d), `${l} ${d}`); }
   await p.screenshot({ path: S + '/3-reload.png' });
   // Day view
   await p.locator('ion-tab-button[tab="day"]').click();

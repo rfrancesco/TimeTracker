@@ -96,6 +96,8 @@ on launch/resume and shows an "App updated" toast.
   as "started at"); default = the 5-min chip; chips that don't fit are greyed, never hidden.
   Chips are exact offsets (seconds kept, so the timer moves by exactly 5:00), worked out
   when the main button is tapped; a typed time in the minute of the start/last end snaps to it.
+  The Timer shows a sheet action's (and Stop/discard's) result at once (`showing()` in
+  TimerPage: the phone's undo snapshots + write take ~1 s) until the DB says the same.
 - Undo/redo: ↶ ↷ top-right on Timer (fixed slots, each shown only when usable). The
   last 20 timer actions (start, area/sub-area change, stop, rewind, discard,
   notification Stop) are recorded via `recordTimerAction` in `src/undo.ts` as
