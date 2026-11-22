@@ -38,6 +38,18 @@ const QUICK = [5, 15, 30, 60];
 const hhmm = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 const floorMin = (ms: number) => Math.floor(ms / MIN) * MIN;
 const quickLabel = (m: number) => (m < 60 ? `${m} min` : '1 h');
+/**
+ * Quick choices count back from a fixed anchor per mode, named in the label:
+ * "ago" = from now (forgot to stop / switch / start while idle), "earlier" = from the
+ * running timer's start (holding the running area: forgot to start it on time).
+ */
+function quickTimes(start: number, runningStart: boolean, now: number) {
+  return QUICK.map((m) =>
+    runningStart
+      ? { key: String(m), label: `${quickLabel(m)} earlier`, t: floorMin(start - m * MIN) }
+      : { key: String(m), label: `${quickLabel(m)} ago`, t: floorMin(now - m * MIN) },
+  );
+}
 
 /** "I forgot to stop / start / switch": pick when it actually happened. */
 export default function StopEarlierSheet({ mode, active, area, subName, open, onClose, onStop, onDiscard, onStart, onSwitch }: Props) {
@@ -50,21 +62,27 @@ export default function StopEarlierSheet({ mode, active, area, subName, open, on
   // The earliest allowed moment, per mode.
   const earliest = mode.kind === 'start' ? mode.min : start;
   const isAllowed = (t: number) => (mode.kind === 'stop' ? t > start : t >= earliest);
+  const runningStart = mode.kind === 'start' && active?.areaId === mode.area.id;
 
   useEffect(() => {
     if (!open) return;
     setDiscard(false);
-    const nowMin = floorMin(Date.now());
-    if (mode.kind === 'stop') setEnd(nowMin);
-    else if (mode.kind === 'start') {
+    const now = Date.now();
+    const nowMin = floorMin(now);
+    // The smallest correction that fits, else the closest valid moment.
+    const firstQuick = quickTimes(start, runningStart, now)[0].t;
+    if (mode.kind === 'stop') setEnd(isAllowed(firstQuick) ? firstQuick : nowMin);
+    else if (runningStart) {
+      // 5 min earlier than the current start; else right after the last interval; else unchanged.
+      setEnd(isAllowed(firstQuick) ? firstQuick : Number.isFinite(mode.min) && mode.min < start ? mode.min : start);
+    } else if (mode.kind === 'start') {
       // Right after the last interval when that was recent (the usual "meant to
       // start it right after" case), otherwise 5 minutes ago.
       const recent = Number.isFinite(mode.min) && Date.now() - mode.min <= 60 * MIN;
       setEnd(recent ? mode.min : Math.max(nowMin - 5 * MIN, mode.min));
     } else {
-      // The first quick time after the running timer started, else its very start (a relabel).
-      const first = QUICK.map((m) => floorMin(Date.now() - m * MIN)).find((t) => t >= start);
-      setEnd(first ?? start);
+      // 5 min ago if the running timer started before that, else its very start (a relabel).
+      setEnd(isAllowed(firstQuick) ? firstQuick : start);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -76,7 +94,10 @@ export default function StopEarlierSheet({ mode, active, area, subName, open, on
   const now = Date.now();
   const nowMin = floorMin(now);
   const target = mode.kind === 'stop' ? area : mode.area;
-  const runningStart = mode.kind === 'start' && active?.areaId === mode.area.id;
+  // Holding the running area when it already starts right after the last interval:
+  // nothing earlier is possible (a later start can still be typed).
+  const nothingEarlier = runningStart && mode.kind === 'start' && start - mode.min < MIN;
+  const unchanged = runningStart && end === start;
 
   let problem: string | null = null;
   if (end > now) problem = 'That’s in the future';
@@ -96,7 +117,11 @@ export default function StopEarlierSheet({ mode, active, area, subName, open, on
   } else if (mode.kind === 'start') {
     hint =
       problem ??
-      (runningStart
+      (unchanged
+        ? nothingEarlier
+          ? `Already right after ${mode.afterName ?? 'the last interval'}.`
+          : `That’s the current start.`
+        : runningStart
         ? `${mode.area.name} since ${hhmm(end)} instead of ${hhmm(start)}.`
         : `Tracks ${mode.area.name} since ${hhmm(end)} (${formatDuration(now - end, false)} ago).`);
   } else {
@@ -107,7 +132,8 @@ export default function StopEarlierSheet({ mode, active, area, subName, open, on
         : `Saves ${area?.name} ${hhmm(start)}–${hhmm(end)}, then ${mode.area.name} since ${hhmm(end)}.`);
   }
 
-  const title = mode.kind === 'stop' ? 'Stopped earlier?' : mode.kind === 'start' ? 'Started earlier?' : 'Switched earlier?';
+  const title =
+    mode.kind === 'stop' ? 'When did you stop?' : mode.kind === 'start' ? 'When did you start?' : `When did you switch to ${mode.area.name}?`;
   const fieldLabel = mode.kind === 'stop' ? 'Ended' : mode.kind === 'start' ? 'Started' : 'Switched';
   const dot = (a: AreaView) => (
     <span className="dot" style={{ background: a.color, color: a.onColor }}>
@@ -115,14 +141,17 @@ export default function StopEarlierSheet({ mode, active, area, subName, open, on
     </span>
   );
 
-  // Quick choices: "Now" (stop), "After <last area>" (start), then 5/15/30 min and 1 h.
+  // Quick choices: "Now" (stop), "After <last area>" (start), then 5/15/30 min and 1 h
+  // (ago, or earlier than the running start). Ones that don't fit are greyed, not hidden,
+  // so every chip keeps its place.
   const quick: Array<{ key: string; label: string; t: number }> = [];
   if (mode.kind === 'stop') quick.push({ key: 'now', label: 'Now', t: nowMin });
   if (mode.kind === 'start' && Number.isFinite(mode.min) && mode.afterName && mode.min <= now)
     quick.push({ key: 'after', label: `After ${mode.afterName}`, t: mode.min });
-  for (const m of QUICK) quick.push({ key: String(m), label: quickLabel(m), t: floorMin(now - m * MIN) });
+  quick.push(...quickTimes(start, runningStart, now));
+  const chipOk = (t: number) => isAllowed(t) && t <= now && !(runningStart && t >= start);
 
-  const ready = (mode.kind === 'stop' && discard) || (!problem && !(mode.kind === 'start' && !target));
+  const ready = (mode.kind === 'stop' && discard) || (!problem && !unchanged && !(mode.kind === 'start' && !target));
   const tinted = mode.kind !== 'stop' && target;
 
   return (
@@ -146,7 +175,7 @@ export default function StopEarlierSheet({ mode, active, area, subName, open, on
                   {dot(mode.area)}
                   <span>
                     {mode.area.name}
-                    {runningStart && <IonText color="medium"> · since {hhmm(start)}</IonText>}
+                    {runningStart && <IonText color="medium"> · started at {hhmm(start)}</IonText>}
                   </span>
                 </>
               )}
@@ -168,7 +197,7 @@ export default function StopEarlierSheet({ mode, active, area, subName, open, on
                 {quick.map((q) => (
                   <IonChip
                     key={q.key}
-                    disabled={!isAllowed(q.t) || q.t > now}
+                    disabled={!chipOk(q.t)}
                     outline={discard || end !== q.t}
                     onClick={() => pickTime(q.t)}
                   >

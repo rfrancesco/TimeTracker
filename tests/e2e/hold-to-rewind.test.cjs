@@ -1,6 +1,6 @@
 const lib = require('./lib.cjs');
 // Stop: a tap stops at once and never changes the label; holding shows ⏪ REWIND with a
-// right-to-left fill and opens "Stopped earlier?"; releasing after the label changed cancels.
+// right-to-left fill and opens "When did you stop?"; releasing after the label changed cancels.
 const { chromium, devices } = require('playwright');
 (async () => {
   const b = await chromium.launch();
@@ -33,7 +33,7 @@ const { chromium, devices } = require('playwright');
   const pct = parseFloat(mid.fill);
   lib.report('holding: the background fills progressively', parseFloat(rest.fill) === 0 && pct > 20 && pct < 100, `${rest.fill} → ${mid.fill}`);
   lib.report('button keeps its width', rest.width === mid.width, `${rest.width}px vs ${mid.width}px`);
-  lib.report('completing the hold opens “Stopped earlier?”', sheet);
+  lib.report('completing the hold opens “When did you stop?”', sheet);
   lib.report('button is back to STOP once the sheet is open', /^stop$/i.test((await state()).label));
   await p.goBack(); await p.waitForTimeout(500);
 

@@ -19,7 +19,7 @@ const { chromium, devices } = require('playwright');
   const box = await p.locator('.stop-button').boundingBox();
   await p.mouse.move(box.x + box.width / 2, box.y + box.height / 2); await p.mouse.down(); await p.waitForTimeout(800); await p.mouse.up(); await p.waitForTimeout(700);
   console.log('long-press:      ', await p.locator('ion-modal.stop-sheet .sheet-title').innerText().catch(() => 'NO SHEET'), '| still running:', (await db()).includes('running: since'));
-  await p.locator('ion-modal.stop-sheet ion-chip', { hasText: /^15 min$/ }).click(); await p.waitForTimeout(200);
+  await p.locator('ion-modal.stop-sheet ion-chip', { hasText: /^15 min ago$/ }).click(); await p.waitForTimeout(200);
   console.log('sheet hint:      ', await p.locator('.sheet-hint').innerText());
   await p.screenshot({ path: S + '/stop-sheet.png' });
   for (const width of [411, 390, 360]) {
@@ -29,9 +29,10 @@ const { chromium, devices } = require('playwright');
       const chips = [...document.querySelectorAll('ion-modal.stop-sheet .sheet-quick ion-chip')].map(c => c.getBoundingClientRect());
       const times = document.querySelector('ion-modal.stop-sheet .sheet-times');
       const bin = chips[chips.length - 1];
-      return { oneLine: chips.every(c => Math.abs(c.top - chips[0].top) < 2), binAtRight: row.right - bin.right < 8, scrolls: times.scrollWidth > times.clientWidth };
+      const lines = new Set(chips.slice(0, -1).map(c => Math.round(c.top))).size;
+      return { lines, inside: chips.every(c => c.left >= row.left - 6 && c.right <= row.right + 6), binAtRight: row.right - bin.right < 8 && Math.abs(bin.top - chips[0].top) < 2, scrolls: times.scrollWidth > times.clientWidth };
     });
-    lib.report(`${width}px: all chips visible on one line, 🗑 at the right end`, lay.oneLine && lay.binAtRight && !lay.scrolls, JSON.stringify(lay));
+    lib.report(`${width}px: every chip visible (at most 2 lines, no sideways scroll), 🗑 at the right of the first line`, lay.lines <= 2 && lay.inside && lay.binAtRight && !lay.scrolls, JSON.stringify(lay));
   }
   await p.setViewportSize({ width: 412, height: 915 }); await p.waitForTimeout(250);
   await p.locator('ion-modal.stop-sheet ion-button', { hasText: 'Stop at' }).click(); await p.waitForTimeout(900);

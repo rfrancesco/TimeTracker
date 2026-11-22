@@ -82,16 +82,18 @@ on launch/resume and shows an "App updated" toast.
   animation in sync.
 - New dialogs automatically get back-gesture support (Ionic overlay events).
 - Stop: a tap stops at once; holding turns it into ⏪ REWIND with a right-to-left fill and
-  opens "Stopped earlier?" (quick times + 🗑 as choices; the tall main button applies
+  opens "When did you stop?" (quick times + 🗑 as choices; the tall main button applies
   the selection, so discarding takes two deliberate taps);
   releasing early cancels (never stops).
 - Earlier, for areas too (tap = now, hold = earlier): holding an area makes the Stop
   slot the indicator (area colour, ⏪ + area icon, "Start earlier"/"Switch earlier",
   same fill) and opens the same sheet (`StopEarlierSheet`, modes stop/start/switch):
-  idle → "Started earlier?" (`startAt`, never before the last interval's end; quick
+  idle → "When did you start?" (`startAt`, never before the last interval's end; quick
   "After <last area>"); the running area → move its start (`restartAt`); another area
-  while running → "Switched earlier?" (`switchAt`, relabel rule under 1 min). All
-  through `recordTimerAction` (undoable).
+  while running → "When did you switch to X?" (`switchAt`, relabel rule under 1 min). All
+  through `recordTimerAction` (undoable). Quick times name their anchor: "5 min ago"
+  (from now: stop, switch, idle start) or "5 min earlier" (from the running start, shown
+  as "started at"); default = the 5-min chip; chips that don't fit are greyed, never hidden.
 - Undo/redo: ↶ ↷ top-right on Timer (fixed slots, each shown only when usable). The
   last 20 timer actions (start, area/sub-area change, stop, rewind, discard,
   notification Stop) are recorded via `recordTimerAction` in `src/undo.ts` as

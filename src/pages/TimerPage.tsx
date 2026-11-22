@@ -32,7 +32,7 @@ export default function TimerPage() {
   const pageBackground = activeArea ? tintOverBackground(activeArea.color, BACKGROUND_TINT, dark) : themeBackground(dark);
   const activeSub = subAreas.find((s) => s.id === active?.subAreaId);
 
-  // ---- Stop: tap stops now; long-press opens "Stopped earlier?" ----
+  // ---- Stop: tap stops now; long-press opens "When did you stop?" ----
   const toast = useToast();
   const [stopSheet, setStopSheet] = useState(false);
   const pressTimer = useRef<number | undefined>(undefined);
@@ -62,7 +62,7 @@ export default function TimerPage() {
     if (label && !ok) toast(`Can’t ${word}: things changed since`);
   }
   // A press that lasts past HOLD_SHOW turns the button into REWIND and starts the
-  // fill (a tap never gets there); at HOLD_DONE the "Stopped earlier?" sheet opens.
+  // fill (a tap never gets there); at HOLD_DONE the "When did you stop?" sheet opens.
   // Releasing after the label changed cancels instead of stopping.
   const HOLD_SHOW = 150;
   const HOLD_DONE = 550;

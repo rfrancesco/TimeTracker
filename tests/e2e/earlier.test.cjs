@@ -1,5 +1,5 @@
 const lib = require('./lib.cjs');
-// "Earlier" (hold an area): start earlier while idle, switch earlier while running,
+// "Earlier" (hold an area; quick times count back from now, or from the start when holding the running area): start earlier while idle, switch earlier while running,
 // move the start of the running area. The Stop slot is the hold indicator; releasing
 // early cancels; a tap still starts at once; every action is undoable.
 const { chromium, devices } = require('playwright');
@@ -46,11 +46,11 @@ const { chromium, devices } = require('playwright');
   lib.report('a tap still starts now', (await db()) === `${BASE} ▶ Guitar since 18:35`, await db());
   await undo();
 
-  // 3. Idle: "Started earlier?"
+  // 3. Idle: "When did you start?" (counts back from now)
   await press('Guitar', 800); await release();
   await p.waitForSelector(`${sheet} .sheet-title`);
   const chips = await p.locator(`${sheet} .sheet-times ion-chip`).allInnerTexts();
-  lib.report('idle hold opens “Started earlier?” with After Thesis + quick times, no 🗑', (await title()) === 'Started earlier?' && chips.join('|') === 'After Thesis|5 min|15 min|30 min|1 h' && (await p.locator(`${sheet} .discard-chip`).count()) === 0, chips.join('|'));
+  lib.report('idle hold opens “When did you start?” with After Thesis + “… ago” times, no 🗑', (await title()) === 'When did you start?' && chips.join('|') === 'After Thesis|5 min ago|15 min ago|30 min ago|1 h ago' && (await p.locator(`${sheet} .discard-chip`).count()) === 0, chips.join('|'));
   await p.waitForTimeout(400); await p.screenshot({ path: `${lib.OUT}/earlier-2-started-sheet.png` });
   lib.report('default: 5 min ago (the last interval ended over an hour ago)', /Start at 06:30 PM|Start at 18:30/i.test(await applyText()), await applyText());
   const applyBg = await apply.evaluate((e) => e.style.getPropertyValue('--background'));
@@ -66,29 +66,37 @@ const { chromium, devices } = require('playwright');
 
   // start 30 min ago for the next steps
   await press('Guitar', 800); await release(); await p.waitForSelector(`${sheet} .sheet-title`);
-  await chip('30 min').click(); await p.waitForTimeout(200); await apply.click(); await sheetGone(); await p.waitForTimeout(500);
-  lib.report('Start at 18:05 via “30 min”', (await db()) === `${BASE} ▶ Guitar since 18:05`, await db());
+  await chip('30 min ago').click(); await p.waitForTimeout(200); await apply.click(); await sheetGone(); await p.waitForTimeout(500);
+  lib.report('Start at 18:05 via “30 min ago”', (await db()) === `${BASE} ▶ Guitar since 18:05`, await db());
 
-  // 4. Running: hold another area → "Switched earlier?"
+  // 4. Running: hold another area → "When did you switch to Reading?" (counts back from now)
   await press('Reading', 320);
   await freeze();
   await p.screenshot({ path: `${lib.OUT}/earlier-3-running-hold.png` });
   const ind2 = await p.locator('.stop-button').evaluate((e) => e.innerText.trim());
   lib.report('while running, the indicator says “Switch earlier”', /Switch earlier/i.test(ind2), ind2);
   await p.clock.resume(); await p.waitForTimeout(500); await release(); await p.waitForSelector(`${sheet} .sheet-title`);
-  await chip('15 min').click(); await p.waitForTimeout(500); await p.screenshot({ path: `${lib.OUT}/earlier-4-switched-sheet.png` });
+  lib.report('switch default: 5 min ago', /Switch at (18:30|06:30 PM)/i.test(await applyText()), await applyText());
+  await chip('15 min ago').click(); await p.waitForTimeout(500); await p.screenshot({ path: `${lib.OUT}/earlier-4-switched-sheet.png` });
   const swDisabled = await p.locator(`${sheet} .sheet-times ion-chip`).evaluateAll((es) => es.map((e) => `${e.innerText}:${e.disabled ? 'off' : 'on'}`).join(' '));
-  lib.report('“Switched earlier?”: times before Guitar started are greyed', (await title()) === 'Switched earlier?' && swDisabled === '5 min:on 15 min:on 30 min:on 1 h:off', swDisabled);
-  await chip('15 min').click(); await p.waitForTimeout(200);
+  lib.report('“When did you switch to Reading?”: times before Guitar started are greyed (not hidden)', (await title()) === 'When did you switch to Reading?' && swDisabled === '5 min ago:on 15 min ago:on 30 min ago:on 1 h ago:off', swDisabled);
+  await chip('15 min ago').click(); await p.waitForTimeout(200);
   lib.report('hint says what will be saved', /Saves Guitar (18:05|06:05 PM)–(18:20|06:20 PM), then Reading since (18:20|06:20 PM)/.test(await hint()), await hint());
   await apply.click(); await sheetGone(); await p.waitForTimeout(500);
   lib.report('Switch at 18:20 → Guitar saved 18:05–18:20, Reading since 18:20', (await db()) === `[Thesis 16:00–17:30, Guitar 18:05–18:20] ▶ Reading since 18:20`, await db());
   await undo();
   lib.report('undo → Guitar running since 18:05 again', (await db()) === `${BASE} ▶ Guitar since 18:05`, await db());
 
-  // 5. Hold the running area → move its start earlier.
+  // 5. Hold the running area → move its start earlier; the times count back from the current start.
   await press('Guitar', 800); await release(); await p.waitForSelector(`${sheet} .sheet-title`);
-  lib.report('holding the running area: “Started earlier?” for the running timer', (await title()) === 'Started earlier?' && /since (18:05|06:05 PM)/.test(await p.locator(`${sheet} .sheet-running`).innerText()));
+  lib.report('holding the running area: “When did you start?”, showing “started at 18:05”', (await title()) === 'When did you start?' && /started at (18:05|06:05 PM)/.test(await p.locator(`${sheet} .sheet-running`).innerText()));
+  const rsChips = await p.locator(`${sheet} .sheet-times ion-chip`).evaluateAll((es) => es.map((e) => `${e.innerText}:${e.disabled ? 'off' : 'on'}`).join(' '));
+  lib.report('…chips count back from the start (“earlier”); 1 h earlier would overlap Thesis → greyed', rsChips === 'After Thesis:on 5 min earlier:on 15 min earlier:on 30 min earlier:on 1 h earlier:off', rsChips);
+  lib.report('…default: 5 min earlier than the start (18:00)', /Start at (18:00|06:00 PM)/i.test(await applyText()), await applyText());
+  await chip('15 min earlier').click(); await p.waitForTimeout(200);
+  lib.report('…“15 min earlier” = 17:50', /Start at (17:50|05:50 PM)/i.test(await applyText()) && /Guitar since (17:50|05:50 PM) instead of (18:05|06:05 PM)/.test(await hint()), `${await applyText()} | ${await hint()}`);
+  await p.locator(`${sheet} .time-input input`).fill('18:05'); await p.waitForTimeout(300);
+  lib.report('…the current start itself can’t be applied (nothing would change)', /current start/.test(await hint()) && (await apply.evaluate((e) => e.disabled)), await hint());
   await chip('After Thesis').click(); await p.waitForTimeout(200);
   lib.report('…hint compares with the current start', /Guitar since (17:30|05:30 PM) instead of (18:05|06:05 PM)/.test(await hint()), await hint());
   await apply.click(); await sheetGone(); await p.waitForTimeout(500);
@@ -104,11 +112,22 @@ const { chromium, devices } = require('playwright');
   lib.report('→ Reading since 18:05, nothing saved for Guitar', (await db()) === `${BASE} ▶ Reading since 18:05`, await db());
   await undo();
 
-  // 7. Holding Stop still opens "Stopped earlier?" (the mode resets).
+  // 6b. Already right after Thesis: nothing earlier is possible, and the sheet says so.
+  await press('Guitar', 800); await release(); await p.waitForSelector(`${sheet} .sheet-title`);
+  await chip('After Thesis').click(); await p.waitForTimeout(200); await apply.click(); await sheetGone(); await p.waitForTimeout(500);
+  await press('Guitar', 800); await release(); await p.waitForSelector(`${sheet} .sheet-title`);
+  const noneChips = await p.locator(`${sheet} .sheet-times ion-chip`).evaluateAll((es) => es.every((e) => e.disabled));
+  lib.report('running right after Thesis: every chip greyed, “Already right after Thesis.”', noneChips && /Already right after Thesis/.test(await hint()) && (await apply.evaluate((e) => e.disabled)), await hint());
+  await p.keyboard.press('Escape'); await sheetGone(); await undo();
+  lib.report('(undo → since 18:05)', (await db()) === `${BASE} ▶ Guitar since 18:05`, await db());
+
+  // 7. Holding Stop still opens "When did you stop?" (the mode resets), default 5 min ago.
   const sb = await p.locator('.stop-button').boundingBox();
   await p.mouse.move(sb.x + sb.width / 2, sb.y + sb.height / 2); await p.mouse.down(); await p.waitForTimeout(800); await p.mouse.up();
   await p.waitForSelector(`${sheet} .sheet-title`);
-  lib.report('holding Stop still opens “Stopped earlier?” with 🗑', (await title()) === 'Stopped earlier?' && (await p.locator(`${sheet} .discard-chip`).count()) === 1);
+  lib.report('holding Stop still opens “When did you stop?” with 🗑', (await title()) === 'When did you stop?' && (await p.locator(`${sheet} .discard-chip`).count()) === 1);
+  const stopChips = await p.locator(`${sheet} .sheet-times ion-chip`).allInnerTexts();
+  lib.report('…Now + “… ago” times, default 5 min ago', stopChips.join('|') === 'Now|5 min ago|15 min ago|30 min ago|1 h ago' && /Stop at (18:30|06:30 PM)/i.test(await applyText()), `${stopChips.join('|')} | ${await applyText()}`);
   await p.screenshot({ path: `${lib.OUT}/earlier-stop-after.png` });
 
   lib.report('no page errors', errs.length === 0, errs.join(' | '));
