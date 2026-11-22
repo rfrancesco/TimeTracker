@@ -135,7 +135,7 @@ export default function DayPage() {
     if (active) {
       const s = new Date(active.start).getTime();
       if (s < dayEnd && now > dayStart) {
-        items.push({ id: 'active', areaId: active.areaId, subAreaId: active.subAreaId, start: s, end: Math.max(now, s + MINUTE), active: true });
+        items.push({ id: 'active', areaId: active.areaId, subAreaId: active.subAreaId, note: active.note, start: s, end: Math.max(now, s + MINUTE), active: true });
       }
     }
     return items;

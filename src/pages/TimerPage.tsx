@@ -1,17 +1,18 @@
 import { useMemo, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { IonButton, IonContent, IonIcon, IonPage } from '@ionic/react';
-import { arrowRedo, arrowUndo, playBack, stop as stopIcon } from 'ionicons/icons';
+import { IonButton, IonChip, IonContent, IonIcon, IonLabel, IonPage } from '@ionic/react';
+import { arrowRedo, arrowUndo, documentTextOutline, playBack, stop as stopIcon } from 'ionicons/icons';
 import AreaPill from '../components/AreaPill';
 import SubAreaChips from '../components/SubAreaChips';
 import TimerDisplay from '../components/TimerDisplay';
+import NoteSheet from '../components/NoteSheet';
 import StopEarlierSheet, { type RewindMode, type SheetAction } from '../components/StopEarlierSheet';
 import { db } from '../db';
 import { useActive, useAreas, useDarkMode, useNow, useSubAreas, type AreaView } from '../hooks';
 import { useToast } from '../toast';
 import { BACKGROUND_TINT, themeBackground, tintOverBackground } from '../color';
 import {
-  discardActive, formatDuration, planRestart, planStart, planStop, planSwitch, restartAt, startAt, stopAt, switchAt, track,
+  discardActive, formatDuration, planRestart, planStart, planStop, planSwitch, restartAt, setNote, startAt, stopAt, switchAt, track,
   type Plan,
 } from '../timer';
 import { recordTimerAction, redo, undo, useUndoRedo } from '../undo';
@@ -66,6 +67,15 @@ export default function TimerPage() {
     if (a?.areaId === target.id)
       return act(`start ${target.name} earlier`, planRestart(a, x.at, x.subId, lastEnd, t), () => restartAt(x.at, x.subId));
     return act(`start ${target.name} earlier`, planStart(a, target.id, x.subId, x.at, lastEnd, t), () => startAt(target.id, x.subId, x.at));
+  }
+
+  // ---- The running timer's note ----
+  const [noteOpen, setNoteOpen] = useState(false);
+  function saveNote(note: string) {
+    setNoteOpen(false);
+    if (!active) return;
+    const { note: _old, ...rest } = active;
+    return act(note ? 'note' : 'remove note', { ok: true, next: note ? { ...rest, note } : rest, saved: null }, () => setNote(note));
   }
 
   async function runHistory(step: typeof undo, word: string) {
@@ -170,6 +180,12 @@ export default function TimerPage() {
                 haptic();
                 doTrack(activeArea.id, id);
               }}
+              extra={
+                <IonChip className={`note-chip${active?.note ? ' has' : ''}`} onClick={() => setNoteOpen(true)}>
+                  <IonIcon icon={documentTextOutline} />
+                  <IonLabel>{active?.note || 'Note'}</IonLabel>
+                </IonChip>
+              }
             />
           )}
 
@@ -216,6 +232,16 @@ export default function TimerPage() {
               </span>
             </IonButton>
           </div>
+
+          <NoteSheet
+            open={noteOpen}
+            area={activeArea}
+            subName={activeSub?.name}
+            start={active?.start}
+            note={active?.note ?? ''}
+            onClose={() => setNoteOpen(false)}
+            onSave={saveNote}
+          />
 
           <StopEarlierSheet
             mode={mode}

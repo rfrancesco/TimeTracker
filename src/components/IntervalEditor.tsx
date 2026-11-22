@@ -66,7 +66,7 @@ export default function IntervalEditor({ value, onClose }: Props) {
     try {
       if (v.kind === 'active') {
         await editUndo.run(`Changed ${name}`, from, () =>
-          updateActive({ start: v.start, areaId: v.areaId, subAreaId: v.subAreaId }, { overwrite }),
+          updateActive({ start: v.start, areaId: v.areaId, subAreaId: v.subAreaId, note: v.note?.trim() || undefined }, { overwrite }),
         );
       } else {
         await editUndo.run(v.kind === 'existing' ? `Saved ${name}` : `Added ${name}`, from, () =>
@@ -170,17 +170,15 @@ export default function IntervalEditor({ value, onClose }: Props) {
                   </p>
                 </IonText>
               </IonItem>
-              {!isActive && (
-                <IonItem>
-                  <IonTextarea
-                    label="Note"
-                    labelPlacement="stacked"
-                    autoGrow
-                    value={v.note ?? ''}
-                    onIonInput={(e) => setV({ ...v, note: e.detail.value ?? '' })}
-                  />
-                </IonItem>
-              )}
+              <IonItem>
+                <IonTextarea
+                  label="Note"
+                  labelPlacement="stacked"
+                  autoGrow
+                  value={v.note ?? ''}
+                  onIonInput={(e) => setV({ ...v, note: e.detail.value ?? '' })}
+                />
+              </IonItem>
             </IonList>
 
             {v.kind !== 'new' && (

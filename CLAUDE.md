@@ -106,6 +106,11 @@ on launch/resume and shows an "App updated" toast.
   (switch mode with `subId`; "From the start" first and preselected = relabel).
   The Timer shows a sheet action's (and Stop/discard's) planned result at once
   (`useOptimisticActive`: the phone's undo snapshots + write take ~1 s) until the DB says the same.
+- Note while running: a "Note" chip ends the sub-area row (dashed when empty, shows the
+  text when set) → `NoteSheet`; stored as `ActiveTimer.note` (`setNote`, undoable), copied
+  to the interval by `commitTimerSpan`, kept by relabel/restart and `updateActive` (unless
+  the patch has a `note` key); a real switch starts the new timer without one. The Day
+  editor edits the running timer's note too.
 - Undo/redo: ↶ ↷ top-right on Timer (fixed slots, each shown only when usable). The
   last 20 timer actions (start, area/sub-area change, stop, rewind, discard,
   notification Stop) are recorded via `recordTimerAction` in `src/undo.ts` as

@@ -42,7 +42,7 @@ export function planRestart(a: ActiveTimer | null, startMs: number, subAreaId: s
   if (!a) return fail('idle');
   if (startMs > now) return fail('future');
   if (startMs < lastEnd) return fail('overlap');
-  return { ok: true, next: timer(a.areaId, subAreaId, startMs), saved: null };
+  return { ok: true, next: { ...timer(a.areaId, subAreaId, startMs), ...(a.note ? { note: a.note } : {}) }, saved: null };
 }
 
 /**
@@ -74,10 +74,15 @@ export function planTrack(a: ActiveTimer | null, areaId: string, subAreaId: stri
   return planSwitch(a, areaId, subAreaId, now, now);
 }
 
-/** Same running timer (label and start)? */
+/** Same running timer (label, start and note)? */
 export const sameTimer = (x: ActiveTimer | null | undefined, y: ActiveTimer | null | undefined) =>
   (x ?? null) === (y ?? null) ||
-  (!!x && !!y && x.areaId === y.areaId && x.subAreaId === y.subAreaId && Date.parse(x.start) === Date.parse(y.start));
+  (!!x &&
+    !!y &&
+    x.areaId === y.areaId &&
+    x.subAreaId === y.subAreaId &&
+    Date.parse(x.start) === Date.parse(y.start) &&
+    (x.note ?? '') === (y.note ?? ''));
 
 const MESSAGES: Record<PlanError, string> = {
   idle: 'Nothing is running',
@@ -103,7 +108,7 @@ function run(plan: (a: ActiveTimer | null, lastEnd: number) => Plan): Promise<bo
     if (!p.ok) throw new ConstraintError(MESSAGES[p.error]);
     if (sameTimer(a, p.next)) return false;
     if (a && p.saved) await commitTimerSpan(a, p.saved.end);
-    if (p.next) await updateActive({ start: Date.parse(p.next.start), areaId: p.next.areaId, subAreaId: p.next.subAreaId });
+    if (p.next) await updateActive({ start: Date.parse(p.next.start), areaId: p.next.areaId, subAreaId: p.next.subAreaId, note: p.next.note });
     else await db.active.delete('current');
     return true;
   });
@@ -133,6 +138,16 @@ export function switchAt(areaId: string, subAreaId: string | null, atMs: number)
 /** Stop at `endMs` (default now). Returns whether a timer was stopped. */
 export function stopAt(endMs = Date.now()) {
   return run((a) => planStop(a, endMs, Date.now()));
+}
+
+/** Write the running timer's note ('' removes it). */
+export async function setNote(note: string) {
+  await db.transaction('rw', [db.active], async () => {
+    const a = await db.active.get('current');
+    if (!a) throw new ConstraintError(MESSAGES.idle);
+    const { note: _old, ...rest } = a;
+    await db.active.put(note.trim() ? { ...rest, note: note.trim() } : rest);
+  });
 }
 
 /** Throw the running timer away without saving anything. */

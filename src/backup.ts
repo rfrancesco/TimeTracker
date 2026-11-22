@@ -92,7 +92,7 @@ export function parseBackup(text: string): Backup {
     if (iv.note !== undefined && typeof iv.note !== 'string') throw new BackupError(`An interval has an invalid note.`);
   }
   for (const t of active as Record<string, unknown>[]) {
-    if (!isObj(t) || t.key !== 'current' || !areaIds.has(t.areaId as string) || !isTime(t.start)) {
+    if (!isObj(t) || t.key !== 'current' || !areaIds.has(t.areaId as string) || !isTime(t.start) || (t.note !== undefined && typeof t.note !== 'string')) {
       throw new BackupError('The running timer in this file is invalid.');
     }
   }

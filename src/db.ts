@@ -53,6 +53,8 @@ export interface ActiveTimer {
   areaId: string;
   subAreaId: string | null;
   start: string; // UTC ISO
+  /** Written while it runs (Timer → Note); saved with the interval. */
+  note?: string;
 }
 
 class TrackerDB extends Dexie {

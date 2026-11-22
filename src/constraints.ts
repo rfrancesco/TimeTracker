@@ -124,7 +124,8 @@ export async function saveInterval(input: IntervalInput, { overwrite = false } =
  * with `overwrite`, saved time after the new start is trimmed/removed.
  */
 export async function updateActive(
-  patch: { start: number; areaId: string; subAreaId: string | null },
+  /** Without a `note` key the running timer's note is kept. */
+  patch: { start: number; areaId: string; subAreaId: string | null; note?: string },
   { overwrite = false } = {},
 ) {
   const now = Date.now();
@@ -134,7 +135,8 @@ export async function updateActive(
     const conflicts = await overlapping(patch.start, FAR);
     if (conflicts.length && !overwrite) throw new OverlapError(conflicts, null);
     await applyOps(carve(conflicts, patch.start, FAR));
-    await db.active.put({ key: 'current', areaId: patch.areaId, subAreaId: patch.subAreaId, start: iso(patch.start) });
+    const note = 'note' in patch ? patch.note : (await db.active.get('current'))?.note;
+    await db.active.put({ key: 'current', areaId: patch.areaId, subAreaId: patch.subAreaId, start: iso(patch.start), ...(note ? { note } : {}) });
   });
 }
 
@@ -157,6 +159,7 @@ export async function commitTimerSpan(a: ActiveTimer, end: number): Promise<Inte
     subAreaId: a.subAreaId,
     start: iso(start),
     end: iso(end),
+    ...(a.note ? { note: a.note } : {}),
     updatedAt: nowIso(),
   };
   await db.intervals.add(record);
