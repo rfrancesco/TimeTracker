@@ -36,25 +36,23 @@ interface Props {
 const MIN = 60_000;
 const QUICK = [5, 15, 30, 60];
 const hhmm = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-const floorMin = (ms: number) => Math.floor(ms / MIN) * MIN;
 const quickLabel = (m: number) => (m < 60 ? `${m} min` : '1 h');
-/**
- * Quick choices count back from a fixed anchor per mode, named in the label:
- * "ago" = from now (forgot to stop / switch / start while idle), "earlier" = from the
- * running timer's start (holding the running area: forgot to start it on time).
- */
-function quickTimes(start: number, runningStart: boolean, now: number) {
-  return QUICK.map((m) =>
-    runningStart
-      ? { key: String(m), label: `${quickLabel(m)} earlier`, t: floorMin(start - m * MIN) }
-      : { key: String(m), label: `${quickLabel(m)} ago`, t: floorMin(now - m * MIN) },
-  );
-}
 
 /** "I forgot to stop / start / switch": pick when it actually happened. */
 export default function StopEarlierSheet({ mode, active, area, subName, open, onClose, onStop, onDiscard, onStart, onSwitch }: Props) {
   const start = active ? new Date(active.start).getTime() : 0;
-  const [end, setEnd] = useState(Date.now());
+  // A typed time (minute precision) or, when a chip is selected, that chip: chips are
+  // exact offsets ("5 min ago" = now − 5:00, "5 min earlier" = start − 5:00, seconds
+  // kept, so the timer moves by exactly 5:00), worked out again at the moment of applying.
+  const [typedEnd, setEnd] = useState(Date.now());
+  const [chip, setChip] = useState<string | null>(null);
+  // Re-render every second while open, so "now"-based chips and the hint stay current.
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!open) return;
+    const id = window.setInterval(() => setTick((n) => n + 1), 1000);
+    return () => window.clearInterval(id);
+  }, [open]);
   // 🗑 is one of the choices (stop only); the main button applies whichever is
   // selected, so discarding always takes two deliberate taps.
   const [discard, setDiscard] = useState(false);
@@ -63,36 +61,64 @@ export default function StopEarlierSheet({ mode, active, area, subName, open, on
   const earliest = mode.kind === 'start' ? mode.min : start;
   const isAllowed = (t: number) => (mode.kind === 'stop' ? t > start : t >= earliest);
   const runningStart = mode.kind === 'start' && active?.areaId === mode.area.id;
+  const hasAfter = mode.kind === 'start' && Number.isFinite(mode.min) && !!mode.afterName;
+
+  /**
+   * The moment a chip stands for. Quick times count back from a fixed anchor per mode,
+   * named in the label: "ago" = from now (forgot to stop / switch / start while idle),
+   * "earlier" = from the running timer's start (holding the running area).
+   */
+  const chipTime = (key: string, now: number) => {
+    if (key === 'now') return now;
+    if (key === 'after') return mode.kind === 'start' ? mode.min : now;
+    return (runningStart ? start : now) - Number(key) * MIN;
+  };
 
   useEffect(() => {
     if (!open) return;
     setDiscard(false);
     const now = Date.now();
-    const nowMin = floorMin(now);
     // The smallest correction that fits, else the closest valid moment.
-    const firstQuick = quickTimes(start, runningStart, now)[0].t;
-    if (mode.kind === 'stop') setEnd(isAllowed(firstQuick) ? firstQuick : nowMin);
+    const five = isAllowed(chipTime(String(QUICK[0]), now));
+    const pick = (key: string | null, t = now) => {
+      setChip(key);
+      setEnd(t);
+    };
+    if (mode.kind === 'stop') pick(five ? String(QUICK[0]) : 'now');
     else if (runningStart) {
       // 5 min earlier than the current start; else right after the last interval; else unchanged.
-      setEnd(isAllowed(firstQuick) ? firstQuick : Number.isFinite(mode.min) && mode.min < start ? mode.min : start);
+      if (five) pick(String(QUICK[0]));
+      else if (hasAfter && mode.min < start) pick('after');
+      else pick(null, start);
     } else if (mode.kind === 'start') {
       // Right after the last interval when that was recent (the usual "meant to
       // start it right after" case), otherwise 5 minutes ago.
-      const recent = Number.isFinite(mode.min) && Date.now() - mode.min <= 60 * MIN;
-      setEnd(recent ? mode.min : Math.max(nowMin - 5 * MIN, mode.min));
+      const recent = hasAfter && now - mode.min <= 60 * MIN;
+      pick(recent || (!five && hasAfter) ? 'after' : String(QUICK[0]));
     } else {
       // 5 min ago if the running timer started before that, else its very start (a relabel).
-      setEnd(isAllowed(firstQuick) ? firstQuick : start);
+      if (five) pick(String(QUICK[0]));
+      else pick(null, start);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+  // Typed times have minute precision; within the minute of the running start or of the
+  // last interval's end they mean exactly that moment (which keeps its seconds).
+  const sameMinute = (a: number, b: number) => Math.floor(a / MIN) === Math.floor(b / MIN);
   const pickTime = (t: number) => {
     setDiscard(false);
+    setChip(null);
+    if (active && sameMinute(t, start)) t = start;
+    else if (mode.kind === 'start' && Number.isFinite(mode.min) && sameMinute(t, mode.min)) t = mode.min;
     setEnd(t);
+  };
+  const pickChip = (key: string) => {
+    setDiscard(false);
+    setChip(key);
   };
 
   const now = Date.now();
-  const nowMin = floorMin(now);
+  const end = chip ? chipTime(chip, now) : typedEnd;
   const target = mode.kind === 'stop' ? area : mode.area;
   // Holding the running area when it already starts right after the last interval:
   // nothing earlier is possible (a later start can still be typed).
@@ -145,10 +171,10 @@ export default function StopEarlierSheet({ mode, active, area, subName, open, on
   // (ago, or earlier than the running start). Ones that don't fit are greyed, not hidden,
   // so every chip keeps its place.
   const quick: Array<{ key: string; label: string; t: number }> = [];
-  if (mode.kind === 'stop') quick.push({ key: 'now', label: 'Now', t: nowMin });
-  if (mode.kind === 'start' && Number.isFinite(mode.min) && mode.afterName && mode.min <= now)
-    quick.push({ key: 'after', label: `After ${mode.afterName}`, t: mode.min });
-  quick.push(...quickTimes(start, runningStart, now));
+  if (mode.kind === 'stop') quick.push({ key: 'now', label: 'Now', t: now });
+  if (hasAfter && mode.kind === 'start' && mode.min <= now) quick.push({ key: 'after', label: `After ${mode.afterName}`, t: mode.min });
+  for (const m of QUICK)
+    quick.push({ key: String(m), label: `${quickLabel(m)} ${runningStart ? 'earlier' : 'ago'}`, t: chipTime(String(m), now) });
   const chipOk = (t: number) => isAllowed(t) && t <= now && !(runningStart && t >= start);
 
   const ready = (mode.kind === 'stop' && discard) || (!problem && !unchanged && !(mode.kind === 'start' && !target));
@@ -198,8 +224,8 @@ export default function StopEarlierSheet({ mode, active, area, subName, open, on
                   <IonChip
                     key={q.key}
                     disabled={!chipOk(q.t)}
-                    outline={discard || end !== q.t}
-                    onClick={() => pickTime(q.t)}
+                    outline={discard || chip !== q.key}
+                    onClick={() => pickChip(q.key)}
                   >
                     <IonLabel>{q.label}</IonLabel>
                   </IonChip>
@@ -228,9 +254,11 @@ export default function StopEarlierSheet({ mode, active, area, subName, open, on
               style={tinted ? { ['--background' as string]: target.color, ['--color' as string]: target.onColor } : undefined}
               disabled={!ready}
               onClick={() => {
-                if (mode.kind === 'stop') return discard ? onDiscard() : onStop(end);
-                if (mode.kind === 'start') return onStart(end);
-                return onSwitch(end);
+                // A chip is worked out at this moment ("5 min ago" = exactly 5:00 before the tap).
+                const at = chip ? Math.min(chipTime(chip, Date.now()), Date.now()) : end;
+                if (mode.kind === 'stop') return discard ? onDiscard() : onStop(at);
+                if (mode.kind === 'start') return onStart(at);
+                return onSwitch(at);
               }}
             >
               <IonIcon

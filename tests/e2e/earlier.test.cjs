@@ -68,6 +68,8 @@ const { chromium, devices } = require('playwright');
   await press('Guitar', 800); await release(); await p.waitForSelector(`${sheet} .sheet-title`);
   await chip('30 min ago').click(); await p.waitForTimeout(200); await apply.click(); await sheetGone(); await p.waitForTimeout(500);
   lib.report('Start at 18:05 via “30 min ago”', (await db()) === `${BASE} ▶ Guitar since 18:05`, await db());
+  const elapsed = await p.evaluate(() => new Promise((r) => { const q = indexedDB.open('timetracker'); q.onsuccess = () => { q.result.transaction('active').objectStore('active').get('current').onsuccess = (e) => r(Date.now() - Date.parse(e.target.result.start)); }; }));
+  lib.report('…exactly 30:00 before the tap (seconds kept, no jump to a whole minute)', elapsed >= 30 * 60000 && elapsed < 30 * 60000 + 3000, `${elapsed / 1000} s`);
 
   // 4. Running: hold another area → "When did you switch to Reading?" (counts back from now)
   await press('Reading', 320);
@@ -93,6 +95,13 @@ const { chromium, devices } = require('playwright');
   const rsChips = await p.locator(`${sheet} .sheet-times ion-chip`).evaluateAll((es) => es.map((e) => `${e.innerText}:${e.disabled ? 'off' : 'on'}`).join(' '));
   lib.report('…chips count back from the start (“earlier”); 1 h earlier would overlap Thesis → greyed', rsChips === 'After Thesis:on 5 min earlier:on 15 min earlier:on 30 min earlier:on 1 h earlier:off', rsChips);
   lib.report('…default: 5 min earlier than the start (18:00)', /Start at (18:00|06:00 PM)/i.test(await applyText()), await applyText());
+  const startMs = () => p.evaluate(() => new Promise((r) => { const q = indexedDB.open('timetracker'); q.onsuccess = () => { q.result.transaction('active').objectStore('active').get('current').onsuccess = (e) => r(Date.parse(e.target.result.start)); }; }));
+  const s0 = await startMs();
+  await apply.click(); await sheetGone(); await p.waitForTimeout(500);
+  const s1 = await startMs();
+  lib.report('…“5 min earlier” moves the start by exactly 5:00', s0 - s1 === 5 * 60000, `${(s0 - s1) / 1000} s`);
+  await undo();
+  await press('Guitar', 800); await release(); await p.waitForSelector(`${sheet} .sheet-title`);
   await chip('15 min earlier').click(); await p.waitForTimeout(200);
   lib.report('…“15 min earlier” = 17:50', /Start at (17:50|05:50 PM)/i.test(await applyText()) && /Guitar since (17:50|05:50 PM) instead of (18:05|06:05 PM)/.test(await hint()), `${await applyText()} | ${await hint()}`);
   await p.locator(`${sheet} .time-input input`).fill('18:05'); await p.waitForTimeout(300);
