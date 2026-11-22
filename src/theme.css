@@ -216,6 +216,8 @@
 }
 .day-block {
   position: absolute;
+  left: 2px;
+  width: calc(100% - 4px);
   border-radius: 8px;
   padding: 4px 8px;
   background: color-mix(in srgb, var(--area-color) 30%, var(--ion-background-color, #fff));

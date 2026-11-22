@@ -1,83 +1,71 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import {
-  IonButton, IonContent, IonIcon, IonPage,
-} from '@ionic/react';
+import { IonButton, IonContent, IonIcon, IonPage } from '@ionic/react';
 import { arrowRedo, arrowUndo, playBack, stop as stopIcon } from 'ionicons/icons';
 import AreaPill from '../components/AreaPill';
 import SubAreaChips from '../components/SubAreaChips';
-import { db, type ActiveTimer } from '../db';
-import { useActive, useAreas, useDarkMode, useNow, useSubAreas, useToast, type AreaView } from '../hooks';
-import StopEarlierSheet, { type RewindMode } from '../components/StopEarlierSheet';
+import TimerDisplay from '../components/TimerDisplay';
+import StopEarlierSheet, { type RewindMode, type SheetAction } from '../components/StopEarlierSheet';
+import { db } from '../db';
+import { useActive, useAreas, useDarkMode, useNow, useSubAreas, type AreaView } from '../hooks';
+import { useToast } from '../toast';
 import { BACKGROUND_TINT, themeBackground, tintOverBackground } from '../color';
-import { discardActive, formatDuration, RELABEL_THRESHOLD_MS, restartAt, startAt, stopAt, switchAt, track } from '../timer';
+import {
+  discardActive, formatDuration, planRestart, planStart, planStop, planSwitch, restartAt, startAt, stopAt, switchAt, track,
+  type Plan,
+} from '../timer';
 import { recordTimerAction, redo, undo, useUndoRedo } from '../undo';
+import { buildReport, periodRange } from '../report';
 import { iconFor } from '../icons';
-import { startOfLocalDay } from '../time';
 import { ticksInApp } from '../runningTime';
 import { haptic } from '../haptics';
+import { HOLD_DONE, HOLD_SHOW, useHold } from '../useHold';
+import { useOptimisticActive } from '../useOptimisticActive';
 
-
+/** What a press is holding: Stop, an area, or a sub-area chip of the running area (null = None). */
+type HoldTarget = { kind: 'stop' } | { kind: 'area'; area: AreaView } | { kind: 'sub'; area: AreaView; subId: string | null };
 
 export default function TimerPage() {
   const areas = useAreas();
   const allAreas = useAreas(true);
   const subAreas = useSubAreas();
-  const dbActive = useActive();
-  // What a sheet action is about to store, shown at once: on the phone the undo
-  // snapshots + write take a noticeable moment, and the timer shouldn't lag the tap.
-  // Dropped once the database says the same (the live query can trail the action by a
-  // moment, so not simply when it resolves), at once if the action fails, and after a
-  // second in any case.
-  const [pending, setPending] = useState<{ active: ActiveTimer | null } | null>(null);
-  const active = pending ? (pending.active ?? undefined) : dbActive;
-  useEffect(() => {
-    const key = (a: ActiveTimer | null | undefined) => (a ? `${a.areaId} ${a.subAreaId} ${Date.parse(a.start)}` : '');
-    if (pending && key(dbActive) === key(pending.active)) setPending(null);
-  }, [dbActive, pending]);
-  async function showing<T>(next: ActiveTimer | null, action: () => Promise<T>) {
-    const mine = { active: next };
-    setPending(mine);
-    const drop = () => setPending((p) => (p === mine ? null : p));
-    try {
-      const result = await action();
-      window.setTimeout(drop, 1000);
-      return result;
-    } catch (e) {
-      drop();
-      throw e;
-    }
-  }
-  // Tick every second while tracking, every minute otherwise (keeps "today" correct past midnight).
-  const now = useNow(active && ticksInApp(allAreas.find((a) => a.id === active.areaId)) ? 1000 : 60_000);
-
+  const { active, showing } = useOptimisticActive(useActive());
   const activeArea = allAreas.find((a) => a.id === active?.areaId);
+  const activeSub = subAreas.find((s) => s.id === active?.subAreaId);
+  const subsOfActive = subAreas.filter((s) => s.areaId === active?.areaId && !s.archived);
+  // Tick every second while the timer ticks, every minute otherwise (keeps "today" correct past midnight).
+  const now = useNow(active && ticksInApp(activeArea) ? 1000 : 60_000);
   const dark = useDarkMode();
   const pageBackground = activeArea ? tintOverBackground(activeArea.color, BACKGROUND_TINT, dark) : themeBackground(dark);
-  const activeSub = subAreas.find((s) => s.id === active?.subAreaId);
-
-  // ---- Stop: tap stops now; long-press opens "When did you stop?" ----
   const toast = useToast();
-  const [stopSheet, setStopSheet] = useState(false);
-  const pressTimer = useRef<number | undefined>(undefined);
-  const longPressed = useRef(false);
-
-  // ---- Undo/redo: ↶ walks back through recent timer actions, ↷ forward again ----
   const { canUndo, canRedo } = useUndoRedo();
   const nameOf = (id: string) => allAreas.find((a) => a.id === id)?.name ?? 'Timer';
+  const last = useLiveQuery(() => db.intervals.orderBy('end').last());
+  const lastEnd = last ? Date.parse(last.end) : -Infinity;
 
-  async function doTrack(areaId: string, subAreaId: string | null) {
-    await recordTimerAction(`${active ? 'switch to' : 'start'} ${nameOf(areaId)}`, () => track(areaId, subAreaId));
+  // ---- Timer actions: undoable; with a plan, its result shows at once ----
+  async function act(label: string, plan: Plan | null, action: () => Promise<unknown>) {
+    const run = () => recordTimerAction(label, action);
+    await (plan?.ok ? showing(plan.next, run) : run());
   }
+  const runningName = active ? nameOf(active.areaId) : 'timer';
+  const doTrack = (areaId: string, subAreaId: string | null) =>
+    act(`${active ? 'switch to' : 'start'} ${nameOf(areaId)}`, null, () => track(areaId, subAreaId));
+  const doStop = () => act(`stop ${runningName}`, planStop(active ?? null, Date.now(), Date.now()), () => stopAt());
 
-  async function doStop(endMs?: number) {
-    const name = active ? nameOf(active.areaId) : 'timer';
-    await showing(null, () => recordTimerAction(`${endMs !== undefined ? 'rewind' : 'stop'} ${name}`, () => stopAt(endMs)));
-  }
-
-  async function doDiscard() {
-    const name = active ? nameOf(active.areaId) : 'timer';
-    await showing(null, () => recordTimerAction(`discard ${name}`, () => discardActive()));
+  function applySheet(x: SheetAction) {
+    setSheetOpen(false);
+    const a = active ?? null;
+    const t = Date.now();
+    if (x.kind === 'stop') return act(`rewind ${runningName}`, planStop(a, x.at, t), () => stopAt(x.at));
+    if (x.kind === 'discard') return act(`discard ${runningName}`, { ok: true, next: null, saved: null }, discardActive);
+    if (mode.kind === 'stop') return;
+    const target = mode.area;
+    if (x.kind === 'switch')
+      return act(`switch to ${target.name} earlier`, planSwitch(a, target.id, x.subId, x.at, t), () => switchAt(target.id, x.subId, x.at));
+    if (a?.areaId === target.id)
+      return act(`start ${target.name} earlier`, planRestart(a, x.at, x.subId, lastEnd, t), () => restartAt(x.at, x.subId));
+    return act(`start ${target.name} earlier`, planStart(a, target.id, x.subId, x.at, lastEnd, t), () => startAt(target.id, x.subId, x.at));
   }
 
   async function runHistory(step: typeof undo, word: string) {
@@ -85,113 +73,33 @@ export default function TimerPage() {
     // Silent on success (the screen shows the result); speak up only if it was refused.
     if (label && !ok) toast(`Can’t ${word}: things changed since`);
   }
-  // A press that lasts past HOLD_SHOW turns the button into REWIND and starts the
-  // fill (a tap never gets there); at HOLD_DONE the "When did you stop?" sheet opens.
-  // Releasing after the label changed cancels instead of stopping.
-  const HOLD_SHOW = 150;
-  const HOLD_DONE = 550;
-  const [holding, setHolding] = useState(false);
-  const showTimer = useRef<number | undefined>(undefined);
-  const holdShown = useRef(false);
-  const startPress = () => {
-    longPressed.current = false;
-    holdShown.current = false;
-    window.clearTimeout(pressTimer.current);
-    window.clearTimeout(showTimer.current);
-    showTimer.current = window.setTimeout(() => {
-      holdShown.current = true;
-      setHolding(true);
-    }, HOLD_SHOW);
-    pressTimer.current = window.setTimeout(() => {
-      longPressed.current = true;
-      haptic('long');
-      setHolding(false);
-      setMode({ kind: 'stop' });
-      setStopSheet(true);
-    }, HOLD_DONE);
-  };
-  const cancelPress = () => {
-    window.clearTimeout(pressTimer.current);
-    window.clearTimeout(showTimer.current);
-    setHolding(false);
-  };
 
-  // ---- Hold an area: "earlier" (start earlier while idle, switch earlier while
-  // running, or move the start of the running area). Same timings as Stop; the Stop
-  // slot shows the progress, in the held area's colour (the thumb covers the area).
+  // ---- Tap = now, hold = earlier (Stop, areas, sub-area chips) ----
+  // Holding Stop turns it into REWIND; holding an area or sub-area turns the Stop slot
+  // into the indicator, in that area's colour (the thumb covers what is held). A
+  // completed hold opens the sheet; releasing earlier cancels.
+  const [sheetOpen, setSheetOpen] = useState(false);
   const [mode, setMode] = useState<RewindMode>({ kind: 'stop' });
-  const [areaHold, setAreaHold] = useState<AreaView | null>(null);
-  const [holdSub, setHoldSub] = useState(false); // the held thing is a sub-area chip (of the running area)
-  const areaShowTimer = useRef<number | undefined>(undefined);
-  const areaDoneTimer = useRef<number | undefined>(undefined);
-  const areaHoldUsed = useRef(false); // the press became a hold: the click that follows is not a tap
-  const last = useLiveQuery(() => db.intervals.orderBy('end').last());
-  const lastEnd = last ? Date.parse(last.end) : -Infinity;
-  /** `subId` given (string or null = None): a sub-area chip of the running area `a`. */
-  const startAreaPress = (a: AreaView, subId?: string | null) => {
-    areaHoldUsed.current = false;
-    const sub = subId !== undefined;
-    window.clearTimeout(areaShowTimer.current);
-    window.clearTimeout(areaDoneTimer.current);
-    areaShowTimer.current = window.setTimeout(() => {
-      areaHoldUsed.current = true;
-      setHoldSub(sub);
-      setAreaHold(a);
-    }, HOLD_SHOW);
-    areaDoneTimer.current = window.setTimeout(() => {
-      haptic('long');
-      setAreaHold(null);
-      const switching = active && a.id !== active.areaId;
-      if (sub) setMode({ kind: 'switch', area: a, subId });
-      else setMode(switching ? { kind: 'switch', area: a } : { kind: 'start', area: a, min: lastEnd, afterName: last ? nameOf(last.areaId) : undefined });
-      setStopSheet(true);
-    }, HOLD_DONE);
-  };
-  const endAreaPress = () => {
-    window.clearTimeout(areaShowTimer.current);
-    window.clearTimeout(areaDoneTimer.current);
-    setAreaHold(null);
-  };
-  const areaHoldLabel = areaHold && (holdSub || (active && areaHold.id !== active.areaId) ? 'Switch earlier' : 'Start earlier');
+  const hold = useHold<HoldTarget>((t) => {
+    haptic('long');
+    if (t.kind === 'stop') setMode({ kind: 'stop' });
+    else if (t.kind === 'sub') setMode({ kind: 'switch', area: t.area, subId: t.subId });
+    else if (active && t.area.id !== active.areaId) setMode({ kind: 'switch', area: t.area });
+    else setMode({ kind: 'start', area: t.area, min: lastEnd, afterName: last ? nameOf(last.areaId) : undefined });
+    setSheetOpen(true);
+  });
+  const held = hold.held;
+  const areaHold = held && held.kind !== 'stop' ? held.area : null;
+  const switching = held?.kind === 'sub' || (held?.kind === 'area' && !!active && held.area.id !== active.areaId);
 
-  async function doStartEarlier(a: AreaView, ms: number, subId: string | null) {
-    const start = new Date(ms).toISOString();
-    if (active?.areaId === a.id)
-      await showing({ ...active, start, subAreaId: subId }, () => recordTimerAction(`start ${a.name} earlier`, () => restartAt(ms, subId)));
-    else await showing({ key: 'current', areaId: a.id, subAreaId: subId, start }, () => recordTimerAction(`start ${a.name} earlier`, () => startAt(a.id, subId, ms)));
-  }
-  async function doSwitchEarlier(a: AreaView, ms: number, subId: string | null) {
-    // Same outcome as switchAt: a relabel under a minute after the start, else a new timer at `ms`.
-    const next: ActiveTimer | null = !active
-      ? null
-      : ms - Date.parse(active.start) < RELABEL_THRESHOLD_MS
-        ? { ...active, areaId: a.id, subAreaId: subId }
-        : { key: 'current', areaId: a.id, subAreaId: subId, start: new Date(ms).toISOString() };
-    await showing(next, () => recordTimerAction(`switch to ${a.name} earlier`, () => switchAt(a.id, subId, ms)));
-  }
-  const subsOfActive = subAreas.filter((s) => s.areaId === active?.areaId && !s.archived);
-  // The current moment, not the last tick's: right after a change the digits are exact.
-  const elapsed = active ? Math.max(now, Date.now()) - new Date(active.start).getTime() : 0;
-  const ticking = ticksInApp(activeArea);
-  const sinceText = active ? new Date(active.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
-
-
-  // Today's totals (finished intervals + running one).
-  const dayStart = startOfLocalDay(now).toISOString();
-  const todays = useLiveQuery(() => db.intervals.where('end').above(dayStart).toArray(), [dayStart]) ?? [];
-  const totals = useMemo(() => {
-    const m = new Map<string, number>();
-    const ds = new Date(dayStart).getTime();
-    for (const i of todays) {
-      const ms = new Date(i.end).getTime() - Math.max(ds, new Date(i.start).getTime());
-      m.set(i.areaId, (m.get(i.areaId) ?? 0) + ms);
-    }
-    if (active) {
-      const ms = now - Math.max(ds, new Date(active.start).getTime());
-      m.set(active.areaId, (m.get(active.areaId) ?? 0) + ms);
-    }
-    return [...m.entries()].sort((a, b) => b[1] - a[1]);
-  }, [todays, active, now, dayStart]);
+  // Today's totals (finished intervals + the running one).
+  const today = periodRange('day', now);
+  const todays = useLiveQuery(() => db.intervals.where('end').above(new Date(today.start).toISOString()).toArray(), [today.start]) ?? [];
+  const totals = useMemo(
+    () => [...buildReport(today, todays, active, now, null).byArea].sort((x, y) => y[1] - x[1]),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [todays, active, now, today.start],
+  );
 
   return (
     <IonPage
@@ -228,47 +136,17 @@ export default function TimerPage() {
               <IonIcon slot="icon-only" icon={arrowRedo} />
             </IonButton>
           </div>
-          <section className="timer-display" aria-live="polite">
-            {active && activeArea ? (
-              <>
-                <div className="timer-label">
-                  <IonIcon icon={iconFor(activeArea.icon)} />
-                  <span>
-                    {activeArea.name}
-                    {activeSub ? ` · ${activeSub.name}` : ''}
-                  </span>
-                </div>
-                {/* One structure for every state: a caption above one big number. Running
-                    time off (e.g. Sleep): the start time, muted, instead of the ticking digits. */}
-                <div className="timer-caption">{ticking ? `Started at ${sinceText}` : 'Started at'}</div>
-                <div className={`timer-digits${ticking ? '' : ' quiet'}`}>{ticking ? formatDuration(elapsed) : sinceText}</div>
-              </>
-            ) : (
-              <>
-                {/* Invisible stand-in for the area name, so the caption and number sit
-                    on exactly the same lines as in the running states. */}
-                <div className="timer-label placeholder" aria-hidden>
-                  <IonIcon icon={iconFor('moon')} />
-                  <span>Timer</span>
-                </div>
-                <div className="timer-caption">Tap an area to start</div>
-                <div className="timer-digits idle">0:00:00</div>
-              </>
-            )}
-          </section>
+
+          <TimerDisplay active={active} area={activeArea} subName={activeSub?.name} now={now} />
 
           <AreaPill
             areas={areas}
             background={pageBackground}
             selectedId={active?.areaId}
-            onPressStart={startAreaPress}
-            onPressEnd={endAreaPress}
+            onPressStart={(area) => hold.start({ kind: 'area', area })}
+            onPressEnd={hold.end}
             onSelect={(a) => {
-              if (areaHoldUsed.current) {
-                // The press became a hold (sheet opened, or released early = cancelled): not a tap.
-                areaHoldUsed.current = false;
-                return;
-              }
+              if (hold.wasHold()) return;
               haptic();
               // Re-tapping the running area keeps its sub-area.
               if (a.id === active?.areaId) return;
@@ -283,15 +161,12 @@ export default function TimerPage() {
               color={activeArea.color}
               allowNone
               // Hold = "switch earlier" to that sub-area (not the current one: nothing to switch to).
-              onPressStart={(id) => {
-                if (id !== (active?.subAreaId ?? null)) startAreaPress(activeArea, id);
+              onPressStart={(subId) => {
+                if (subId !== (active?.subAreaId ?? null)) hold.start({ kind: 'sub', area: activeArea, subId });
               }}
-              onPressEnd={endAreaPress}
+              onPressEnd={hold.end}
               onSelect={(id) => {
-                if (areaHoldUsed.current) {
-                  areaHoldUsed.current = false;
-                  return;
-                }
+                if (hold.wasHold()) return;
                 haptic();
                 doTrack(activeArea.id, id);
               }}
@@ -300,7 +175,7 @@ export default function TimerPage() {
 
           <div className="stop-wrap">
             <IonButton
-              className={`stop-button${holding || areaHold ? ' holding' : ''}${areaHold ? ' area-hold' : ''}`}
+              className={`stop-button${held ? ' holding' : ''}${areaHold ? ' area-hold' : ''}`}
               style={{
                 ['--fill-ms' as string]: `${HOLD_DONE - HOLD_SHOW}ms`,
                 ...(areaHold && { ['--background' as string]: areaHold.color, ['--color' as string]: areaHold.onColor }),
@@ -309,18 +184,13 @@ export default function TimerPage() {
               size="large"
               color={areaHold ? undefined : 'danger'}
               disabled={!active && !areaHold}
-              onPointerDown={startPress}
-              onPointerUp={cancelPress}
-              onPointerLeave={cancelPress}
-              onPointerCancel={cancelPress}
+              onPointerDown={() => hold.start({ kind: 'stop' })}
+              onPointerUp={hold.end}
+              onPointerLeave={hold.end}
+              onPointerCancel={hold.end}
               onContextMenu={(e) => e.preventDefault()}
               onClick={() => {
-                if (longPressed.current || holdShown.current) {
-                  // The hold opened the sheet, or was released early (cancelled): not a tap.
-                  longPressed.current = false;
-                  holdShown.current = false;
-                  return;
-                }
+                if (hold.wasHold()) return;
                 haptic();
                 doStop();
               }}
@@ -328,11 +198,11 @@ export default function TimerPage() {
               {/* Both labels (icon + text) share one cell, so the button is always as wide
                   as the longer one and each is centred as a group. */}
               <span className="stop-labels">
-                <span className={holding || areaHold ? 'off' : undefined}>
+                <span className={held ? 'off' : undefined}>
                   <IonIcon icon={stopIcon} />
                   Stop
                 </span>
-                <span className={holding && !areaHold ? undefined : 'off'}>
+                <span className={held?.kind === 'stop' ? undefined : 'off'}>
                   <IonIcon icon={playBack} />
                   Rewind
                 </span>
@@ -340,7 +210,7 @@ export default function TimerPage() {
                   <span className="area-hold-label">
                     <IonIcon icon={playBack} />
                     <IonIcon icon={iconFor(areaHold.icon)} />
-                    {areaHoldLabel}
+                    {switching ? 'Switch earlier' : 'Start earlier'}
                   </span>
                 )}
               </span>
@@ -349,28 +219,13 @@ export default function TimerPage() {
 
           <StopEarlierSheet
             mode={mode}
-            onStart={(ms, subId) => {
-              setStopSheet(false);
-              if (mode.kind === 'start') doStartEarlier(mode.area, ms, subId);
-            }}
-            onSwitch={(ms, subId) => {
-              setStopSheet(false);
-              if (mode.kind === 'switch') doSwitchEarlier(mode.area, ms, subId);
-            }}
-            subAreas={subAreas}
             active={active}
             area={activeArea}
             subName={activeSub?.name}
-            open={stopSheet}
-            onClose={() => setStopSheet(false)}
-            onDiscard={() => {
-              setStopSheet(false);
-              doDiscard();
-            }}
-            onStop={(endMs) => {
-              setStopSheet(false);
-              doStop(endMs);
-            }}
+            subAreas={subAreas}
+            open={sheetOpen}
+            onClose={() => setSheetOpen(false)}
+            onApply={applySheet}
           />
 
           {totals.length > 0 && (

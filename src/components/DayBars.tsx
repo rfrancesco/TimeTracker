@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { HATCH, HatchDefs } from './Donut';
 import type { Rest } from '../report';
+import { HOUR } from '../time';
 
 export interface BarSeries {
   id: string;
@@ -27,7 +28,6 @@ const H = 170; // plot height
 const AXIS_W = 30;
 const X_BAND = 20;
 const GAP = 2;
-const HOUR = 3_600_000;
 
 function niceTop(maxMs: number) {
   const h = Math.max(1, maxMs / HOUR);

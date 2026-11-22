@@ -42,7 +42,7 @@ export function periodLabel(period: Period, r: Range, now: number) {
   const current = r.start <= now && now < r.end;
   if (period === 'day') {
     if (current) return 'Today';
-    if (periodRange('day', now - 86_400_000).start === r.start) return 'Yesterday';
+    if (addLocalDays(now, -1).getTime() === r.start) return 'Yesterday';
     return new Date(r.start).toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long' });
   }
   if (period === 'week') {

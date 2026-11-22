@@ -10,10 +10,14 @@ import TimerPage from './pages/TimerPage';
 import DayPage from './pages/DayPage';
 import ReportPage from './pages/ReportPage';
 import SettingsPage from './pages/SettingsPage';
-import { TAB_BAR_ID, setThemeColor, useActive, useAreas, useDarkMode, useNow, useToast } from './hooks';
+import { useActive, useAreas, useDarkMode, useNow } from './hooks';
+import { TAB_BAR_ID, useToast } from './toast';
+import { setThemeColor } from './theme';
 import { BACKGROUND_TINT, themeBackground, tintOverBackground } from './color';
 import { formatHex, parse } from 'culori';
 import { formatDuration } from './timer';
+import { formatClock } from './time';
+import { readPref, writePref } from './prefs';
 import { NativeTimerSync } from './native';
 import { ticksInApp } from './runningTime';
 
@@ -40,7 +44,7 @@ function TimerTabLabel() {
   const ticking = !!active && ticksInApp(area);
   const now = useNow(1000, ticking);
   if (!active) return <IonLabel>Timer</IonLabel>;
-  if (!ticking) return <IonLabel>{new Date(active.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</IonLabel>;
+  if (!ticking) return <IonLabel>{formatClock(active.start)}</IonLabel>;
   return <IonLabel>{formatDuration(now - new Date(active.start).getTime())}</IonLabel>;
 }
 
@@ -52,13 +56,8 @@ function TimerTabLabel() {
 function UpdateNotice() {
   const toast = useToast();
   useEffect(() => {
-    let last: string | null = null;
-    try {
-      last = localStorage.getItem('lastBuild');
-      localStorage.setItem('lastBuild', __APP_BUILD__);
-    } catch {
-      return;
-    }
+    const last = readPref('lastBuild');
+    writePref('lastBuild', __APP_BUILD__);
     if (last && last !== __APP_BUILD__) toast('App updated to the latest version', { duration: 3000 });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

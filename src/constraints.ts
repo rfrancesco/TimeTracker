@@ -1,4 +1,5 @@
 import { db, nowIso, uuid, type ActiveTimer, type Interval } from './db';
+import { formatClock } from './time';
 
 /**
  * THE invariant of the time data. Every write that changes when an interval or
@@ -296,13 +297,12 @@ export function normalize(intervals: Interval[], active: ActiveTimer | undefined
 
 /** Describe a conflict list for a confirmation dialog. */
 export function describeConflicts(e: OverlapError, nameOf: (areaId: string) => string) {
-  const fmt = (t: string) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const day = (t: string) => new Date(t).toLocaleDateString([], { day: 'numeric', month: 'short' });
   const lines = e.conflicts
     .sort((a, b) => a.start.localeCompare(b.start))
     .slice(0, 4)
-    .map((c) => `${nameOf(c.areaId)}: ${day(c.start)} ${fmt(c.start)}–${fmt(c.end)}`);
+    .map((c) => `${nameOf(c.areaId)}: ${day(c.start)} ${formatClock(c.start)}–${formatClock(c.end)}`);
   if (e.conflicts.length > 4) lines.push(`…and ${e.conflicts.length - 4} more`);
-  if (e.activeConflict) lines.push(`Running ${nameOf(e.activeConflict.areaId)} timer (started ${fmt(e.activeConflict.start)})`);
+  if (e.activeConflict) lines.push(`Running ${nameOf(e.activeConflict.areaId)} timer (started ${formatClock(e.activeConflict.start)})`);
   return lines;
 }

@@ -1,5 +1,5 @@
 import { useIonToast } from '@ionic/react';
-import { TAB_BAR_ID, dismissAllToasts } from './hooks';
+import { TAB_BAR_ID, dismissAllToasts } from './toast';
 import { forgetLastEdit, recordEdit, undoLastEdit } from './undo';
 
 /**

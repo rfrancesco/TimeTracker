@@ -2,6 +2,8 @@
  * Light / dark / follow-system. Ionic's dark palette is applied via the
  * `ion-palette-dark` class on <html> (dark.class.css), so the app decides.
  */
+import { readPref, writePref } from './prefs';
+
 export type ThemePref = 'system' | 'light' | 'dark';
 
 const KEY = 'theme';
@@ -9,12 +11,8 @@ const mq = window.matchMedia?.('(prefers-color-scheme: dark)');
 const listeners = new Set<() => void>();
 
 function load(): ThemePref {
-  try {
-    const v = localStorage.getItem(KEY);
-    return v === 'light' || v === 'dark' ? v : 'system';
-  } catch {
-    return 'system';
-  }
+  const v = readPref(KEY);
+  return v === 'light' || v === 'dark' ? v : 'system';
 }
 
 let pref: ThemePref = load();
@@ -31,11 +29,7 @@ function apply() {
 
 export function setThemePref(next: ThemePref) {
   pref = next;
-  try {
-    localStorage.setItem(KEY, next);
-  } catch {
-    /* not persisted: still applies for this session */
-  }
+  writePref(KEY, next);
   apply();
 }
 
@@ -46,3 +40,8 @@ export function subscribeTheme(fn: () => void) {
 
 mq?.addEventListener('change', () => pref === 'system' && apply());
 apply(); // before first render, so there is no flash of the wrong theme
+
+/** Tint the Android status bar / task switcher colour. */
+export function setThemeColor(color: string) {
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', color);
+}

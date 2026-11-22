@@ -1,141 +1,143 @@
-import { db, type ActiveTimer, type Interval } from './db';
+import { db, type ActiveTimer } from './db';
 import { ConstraintError, commitTimerSpan, updateActive } from './constraints';
 
 /** Below this, switching relabels the running timer instead of splitting it, and stopping discards it. */
 export const RELABEL_THRESHOLD_MS = 60_000;
 
-const getActive = () => db.active.get('current');
+// ---- The timer rules, as pure functions ----
+// Every timer action is planned here from the current state: the database actions
+// below apply a plan, and the UI uses the same plans for its hints and to show the
+// result before the write lands. So the rules (invariant 3) live in one place.
 
-/**
- * Start tracking `areaId`/`subAreaId`.
- * - nothing running → start
- * - same label running → no-op
- * - running < 1 min → relabel (keep start time)
- * - otherwise → close & save current interval, start a new one at the same instant
- */
-/** What a track() call did, so it can be undone. */
-export interface TrackResult {
-  kind: 'start' | 'relabel' | 'split';
-  before: ActiveTimer | null;
-  after: ActiveTimer;
-  saved: Interval | null; // the interval closed by a split
-}
+export type PlanError = 'idle' | 'running' | 'future' | 'beforeStart' | 'overlap';
 
-/**
- * Start tracking `areaId`/`subAreaId`.
- * - nothing running → start
- * - same label running → no-op (returns null)
- * - running < 1 min → relabel (keep start time)
- * - otherwise → close & save current interval, start a new one at the same instant
- */
-export async function track(areaId: string, subAreaId: string | null): Promise<TrackResult | null> {
-  // Capture the tap time up front, not whenever the transaction happens to run.
-  const nowMs = Date.now();
-  const now = new Date(nowMs).toISOString();
-  return db.transaction('rw', [db.active, db.intervals], async () => {
-    const a = (await getActive()) ?? null;
-    if (!a) {
-      const after: ActiveTimer = { key: 'current', areaId, subAreaId, start: now };
-      await db.active.put(after);
-      return { kind: 'start', before: null, after, saved: null };
+export type Plan =
+  | {
+      ok: true;
+      /** The running timer afterwards (null = nothing running). */
+      next: ActiveTimer | null;
+      /** The span of the old timer that gets saved, if any. */
+      saved: { start: number; end: number } | null;
     }
-    if (a.areaId === areaId && a.subAreaId === subAreaId) return null;
-    if (nowMs - new Date(a.start).getTime() < RELABEL_THRESHOLD_MS) {
-      const after: ActiveTimer = { ...a, areaId, subAreaId };
-      await db.active.put(after);
-      return { kind: 'relabel', before: a, after, saved: null };
-    }
-    const saved = await commitTimerSpan(a, nowMs);
-    const after: ActiveTimer = { key: 'current', areaId, subAreaId, start: now };
-    await db.active.put(after);
-    return { kind: 'split', before: a, after, saved };
-  });
+  | { ok: false; error: PlanError };
+
+const fail = (error: PlanError): Plan => ({ ok: false, error });
+const timer = (areaId: string, subAreaId: string | null, startMs: number): ActiveTimer => ({
+  key: 'current',
+  areaId,
+  subAreaId,
+  start: new Date(startMs).toISOString(),
+});
+
+/** Start `areaId` at `startMs` while nothing runs: not in the future, not before `lastEnd`. */
+export function planStart(a: ActiveTimer | null, areaId: string, subAreaId: string | null, startMs: number, lastEnd: number, now: number): Plan {
+  if (a) return fail('running');
+  if (startMs > now) return fail('future');
+  if (startMs < lastEnd) return fail('overlap');
+  return { ok: true, next: timer(areaId, subAreaId, startMs), saved: null };
 }
 
-/** What a stop did, so it can be undone. */
-export interface StopResult {
-  previous: ActiveTimer;
-  saved: Interval | null; // null when the timer was under a minute and discarded
+/** Move the running timer's start (and set its sub-area). */
+export function planRestart(a: ActiveTimer | null, startMs: number, subAreaId: string | null, lastEnd: number, now: number): Plan {
+  if (!a) return fail('idle');
+  if (startMs > now) return fail('future');
+  if (startMs < lastEnd) return fail('overlap');
+  return { ok: true, next: timer(a.areaId, subAreaId, startMs), saved: null };
 }
 
 /**
- * Stop tracking at `endMs` (default: now; never before the start or in the future).
- * Timers shorter than a minute are discarded instead of saved.
+ * The running timer ends at `atMs` and `areaId` runs from then on; under a minute
+ * after the start it is a relabel instead (the whole timer becomes `areaId`).
  */
-export async function stopAt(endMs = Date.now()): Promise<StopResult | null> {
-  const end = Math.min(endMs, Date.now());
-  return db.transaction('rw', [db.active, db.intervals], async () => {
-    const a = await getActive();
-    if (!a) return null;
-    const saved = end - new Date(a.start).getTime() >= RELABEL_THRESHOLD_MS ? await commitTimerSpan(a, end) : null;
-    await db.active.delete('current');
-    return { previous: a, saved };
-  });
+export function planSwitch(a: ActiveTimer | null, areaId: string, subAreaId: string | null, atMs: number, now: number): Plan {
+  if (!a) return fail('idle');
+  const start = Date.parse(a.start);
+  if (atMs > now) return fail('future');
+  if (atMs < start) return fail('beforeStart');
+  if (atMs - start < RELABEL_THRESHOLD_MS) return { ok: true, next: { ...a, areaId, subAreaId }, saved: null };
+  return { ok: true, next: timer(areaId, subAreaId, atMs), saved: { start, end: atMs } };
 }
 
-export const stop = () => stopAt(Date.now());
+/** Stop at `endMs` (capped at now); under a minute the timer is discarded, not saved. Idle: no change. */
+export function planStop(a: ActiveTimer | null, endMs: number, now: number): Plan {
+  if (!a) return { ok: true, next: null, saved: null };
+  const start = Date.parse(a.start);
+  const end = Math.min(endMs, now);
+  if (end < start) return fail('beforeStart');
+  return { ok: true, next: null, saved: end - start >= RELABEL_THRESHOLD_MS ? { start, end } : null };
+}
 
-// ---- "Earlier": the timer actions for when you forgot to start or to switch ----
+/** Tap an area now: start, or switch (same label = no change). */
+export function planTrack(a: ActiveTimer | null, areaId: string, subAreaId: string | null, now: number): Plan {
+  if (!a) return planStart(null, areaId, subAreaId, now, -Infinity, now);
+  if (a.areaId === areaId && a.subAreaId === subAreaId) return { ok: true, next: a, saved: null };
+  return planSwitch(a, areaId, subAreaId, now, now);
+}
+
+/** Same running timer (label and start)? */
+export const sameTimer = (x: ActiveTimer | null | undefined, y: ActiveTimer | null | undefined) =>
+  (x ?? null) === (y ?? null) ||
+  (!!x && !!y && x.areaId === y.areaId && x.subAreaId === y.subAreaId && Date.parse(x.start) === Date.parse(y.start));
+
+const MESSAGES: Record<PlanError, string> = {
+  idle: 'Nothing is running',
+  running: 'A timer is already running',
+  future: 'That is in the future',
+  beforeStart: 'That is before the timer started',
+  overlap: 'That overlaps saved time',
+};
+
+// ---- The database actions: plan from the stored state and apply, in one transaction ----
 
 /** End of the latest saved interval (ms), or -Infinity. Nothing may start before it. */
-export async function latestEnd(): Promise<number> {
+async function latestEnd(): Promise<number> {
   const last = await db.intervals.orderBy('end').last();
   return last ? Date.parse(last.end) : -Infinity;
 }
 
-/**
- * Forgot to start: start tracking at a past moment. Only while nothing runs, and
- * never before the latest saved interval ends (no overlap) or in the future.
- */
-export async function startAt(areaId: string, subAreaId: string | null, startMs: number): Promise<ActiveTimer> {
+/** Returns whether anything changed. */
+function run(plan: (a: ActiveTimer | null, lastEnd: number) => Plan): Promise<boolean> {
   return db.transaction('rw', [db.active, db.intervals], async () => {
-    if (await getActive()) throw new ConstraintError('A timer is already running');
-    if (startMs > Date.now()) throw new ConstraintError('Start must be in the past');
-    if (startMs < (await latestEnd())) throw new ConstraintError('That overlaps saved time');
-    const after: ActiveTimer = { key: 'current', areaId, subAreaId, start: new Date(startMs).toISOString() };
-    await db.active.put(after);
-    return after;
+    const a = (await db.active.get('current')) ?? null;
+    const p = plan(a, await latestEnd());
+    if (!p.ok) throw new ConstraintError(MESSAGES[p.error]);
+    if (sameTimer(a, p.next)) return false;
+    if (a && p.saved) await commitTimerSpan(a, p.saved.end);
+    if (p.next) await updateActive({ start: Date.parse(p.next.start), areaId: p.next.areaId, subAreaId: p.next.subAreaId });
+    else await db.active.delete('current');
+    return true;
   });
 }
 
-/** Started late: move the running timer's start (not before the latest saved interval ends), optionally changing its sub-area. */
-export async function restartAt(startMs: number, subAreaId?: string | null): Promise<void> {
-  const a = await getActive();
-  if (!a) throw new ConstraintError('Nothing is running');
-  if (startMs < (await latestEnd())) throw new ConstraintError('That overlaps saved time');
-  await updateActive({ start: startMs, areaId: a.areaId, subAreaId: subAreaId === undefined ? a.subAreaId : subAreaId });
+/** Tap an area: start, relabel (under a minute) or split. The tap time is taken up front. */
+export function track(areaId: string, subAreaId: string | null) {
+  const now = Date.now();
+  return run((a) => planTrack(a, areaId, subAreaId, now));
 }
 
-/**
- * Forgot to switch: the running timer ends at `atMs` (saved) and `areaId` runs from
- * then on. Under a minute after the running timer's start it is a relabel instead
- * (same rule as switching live).
- */
-export async function switchAt(areaId: string, subAreaId: string | null, atMs: number): Promise<void> {
-  await db.transaction('rw', [db.active, db.intervals], async () => {
-    const a = await getActive();
-    if (!a) throw new ConstraintError('Nothing is running');
-    const start = Date.parse(a.start);
-    if (atMs > Date.now()) throw new ConstraintError('That is in the future');
-    if (atMs < start) throw new ConstraintError('That is before the timer started');
-    if (atMs - start < RELABEL_THRESHOLD_MS) {
-      await db.active.put({ ...a, areaId, subAreaId });
-      return;
-    }
-    await commitTimerSpan(a, atMs);
-    await db.active.put({ key: 'current', areaId, subAreaId, start: new Date(atMs).toISOString() });
-  });
+/** Forgot to start: start tracking at a past moment. */
+export function startAt(areaId: string, subAreaId: string | null, startMs: number) {
+  return run((a, lastEnd) => planStart(a, areaId, subAreaId, startMs, lastEnd, Date.now()));
 }
 
-// (Undo/redo of timer actions: src/undo.ts, snapshot-based.)
+/** Started late: move the running timer's start, setting its sub-area. */
+export function restartAt(startMs: number, subAreaId: string | null) {
+  return run((a, lastEnd) => planRestart(a, startMs, subAreaId, lastEnd, Date.now()));
+}
 
-/** Throw the running timer away without saving anything. Returns it. */
-export async function discardActive(): Promise<ActiveTimer | null> {
-  return db.transaction('rw', [db.active], async () => {
-    const a = (await getActive()) ?? null;
-    if (a) await db.active.delete('current');
-    return a;
-  });
+/** Forgot to switch: see planSwitch. */
+export function switchAt(areaId: string, subAreaId: string | null, atMs: number) {
+  return run((a) => planSwitch(a, areaId, subAreaId, atMs, Date.now()));
+}
+
+/** Stop at `endMs` (default now). Returns whether a timer was stopped. */
+export function stopAt(endMs = Date.now()) {
+  return run((a) => planStop(a, endMs, Date.now()));
+}
+
+/** Throw the running timer away without saving anything. */
+export function discardActive() {
+  return db.active.delete('current');
 }
 
 /** "1:05:09" (running clock, seconds floored) or "1h 05m" (rounded to the nearest minute). */

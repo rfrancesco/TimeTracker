@@ -8,15 +8,17 @@ import { add, chevronBack, chevronForward, documentTextOutline, removeOutline, a
 import IntervalEditor, { type EditorValue } from '../components/IntervalEditor';
 import { db, intervalsOverlapping, type Interval } from '../db';
 import { ConstraintError, freeBounds, saveInterval } from '../constraints';
-import { useActive, useAreas, useNow, useSubAreas, useToast } from '../hooks';
+import { useActive, useAreas, useNow, useSubAreas } from '../hooks';
+import { useToast } from '../toast';
 import { useEditUndo } from '../editUndo';
 import { haptic } from '../haptics';
 import { longPressMs } from '../longPress';
+import { readPref, writePref } from '../prefs';
+import { usePinchZoom } from '../usePinchZoom';
 import { iconFor } from '../icons';
 import { formatDuration } from '../timer';
-import { MINUTE, addLocalDays, atLocalTime, hourMarks, localDateKey, startOfLocalDay } from '../time';
+import { MINUTE, addLocalDays, atLocalTime, formatClock, hourMarks, localDateKey, startOfLocalDay } from '../time';
 
-const MIN = MINUTE;
 /** Zoom range in pixels per minute (1.2 ≈ the whole day in ~29 screen heights of 60px/h). */
 const ZOOM_MIN = 1.2;
 const ZOOM_MAX = 8;
@@ -25,18 +27,10 @@ const TINY_PX = 26;
 const CHIP_H = 26;
 
 const clampZoom = (z: number) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
-const loadZoom = () => {
-  try {
-    return clampZoom(Number(localStorage.getItem('day.zoom')) || ZOOM_MIN);
-  } catch {
-    return ZOOM_MIN;
-  }
-};
+const loadZoom = () => clampZoom(Number(readPref('day.zoom')) || ZOOM_MIN);
 
-const midnight = startOfLocalDay;
-const addDays = addLocalDays;
-const hhmm = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
+/** A block on the timeline: a saved interval, or the running timer. No two overlap (invariant 2). */
 interface Block {
   id: string;
   areaId: string;
@@ -45,39 +39,27 @@ interface Block {
   end: number;
   note?: string;
   active?: boolean;
-  lane: number;
-  lanes: number;
-}
-
-/** Assign overlapping blocks to side-by-side lanes. */
-function layout(items: Omit<Block, 'lane' | 'lanes'>[]): Block[] {
-  const sorted = [...items].sort((a, b) => a.start - b.start || b.end - a.end);
-  const out: Block[] = [];
-  let cluster: Block[] = [];
-  let laneEnds: number[] = [];
-  let clusterEnd = -Infinity;
-  const flush = () => {
-    cluster.forEach((b) => (b.lanes = laneEnds.length));
-    out.push(...cluster);
-    cluster = [];
-    laneEnds = [];
-  };
-  for (const it of sorted) {
-    if (it.start >= clusterEnd) flush();
-    let lane = laneEnds.findIndex((e) => e <= it.start);
-    if (lane === -1) lane = laneEnds.length;
-    laneEnds[lane] = it.end;
-    cluster.push({ ...it, lane, lanes: 1 });
-    clusterEnd = Math.max(clusterEnd, it.end);
-  }
-  flush();
-  return out;
 }
 
 type DragMode = 'move' | 'top' | 'bottom';
 
+/**
+ * Where a dragged block lands: moved `minutes` (snapped to `snap` minutes), or one
+ * edge resized; always inside the free space `bounds` and at least `snap` long.
+ */
+function dragRange(mode: DragMode, s0: number, e0: number, minutes: number, snap: number, bounds: { min: number; max: number }) {
+  const delta = Math.round(minutes / snap) * snap * MINUTE;
+  const minLen = snap * MINUTE;
+  if (mode === 'move') {
+    const d = Math.min(Math.max(delta, bounds.min - s0), bounds.max - e0);
+    return { start: s0 + d, end: e0 + d };
+  }
+  if (mode === 'top') return { start: Math.min(Math.max(s0 + delta, bounds.min), e0 - minLen), end: e0 };
+  return { start: s0, end: Math.max(Math.min(e0 + delta, bounds.max), s0 + minLen) };
+}
+
 export default function DayPage() {
-  const [day, setDay] = useState(() => midnight(new Date()));
+  const [day, setDay] = useState(() => startOfLocalDay(new Date()));
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draft, setDraft] = useState<{ id: string; start: number; end: number } | null>(null);
   const [editing, setEditing] = useState<EditorValue | null>(null);
@@ -106,11 +88,7 @@ export default function DayPage() {
     const minute = (anchor - viewTop) / pxRef.current;
     pendingScroll.current = scrollEl.scrollTop + viewTop - anchor + minute * z;
     setPx(z);
-    try {
-      localStorage.setItem('day.zoom', String(z));
-    } catch {
-      /* ignore */
-    }
+    writePref('day.zoom', String(z));
   }
   useLayoutEffect(() => {
     const target = pendingScroll.current;
@@ -119,36 +97,7 @@ export default function DayPage() {
     contentRef.current?.getScrollElement().then((el) => (el.scrollTop = Math.max(0, target)));
   }, [px]);
 
-  // Two-finger pinch on the timeline (native listeners: we must preventDefault).
-  useEffect(() => {
-    const el = viewRef.current;
-    if (!el) return;
-    let start: { dist: number; px: number } | null = null;
-    const dist = (t: TouchList) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
-    const mid = (t: TouchList) => (t[0].clientY + t[1].clientY) / 2;
-    const onStart = (e: TouchEvent) => {
-      if (e.touches.length === 2) start = { dist: dist(e.touches), px: pxRef.current };
-    };
-    const onMove = (e: TouchEvent) => {
-      if (!start || e.touches.length !== 2) return;
-      e.preventDefault();
-      zoomTo(start.px * (dist(e.touches) / start.dist), mid(e.touches));
-    };
-    const onEnd = (e: TouchEvent) => {
-      if (e.touches.length < 2) start = null;
-    };
-    el.addEventListener('touchstart', onStart, { passive: true });
-    el.addEventListener('touchmove', onMove, { passive: false });
-    el.addEventListener('touchend', onEnd);
-    el.addEventListener('touchcancel', onEnd);
-    return () => {
-      el.removeEventListener('touchstart', onStart);
-      el.removeEventListener('touchmove', onMove);
-      el.removeEventListener('touchend', onEnd);
-      el.removeEventListener('touchcancel', onEnd);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  usePinchZoom(viewRef, () => pxRef.current, zoomTo);
   const dateInputRef = useRef<HTMLInputElement>(null);
 
   const areas = useAreas(true);
@@ -157,10 +106,10 @@ export default function DayPage() {
   const now = useNow(30_000);
 
   const dayStart = day.getTime();
-  const dayEnd = addDays(day, 1).getTime();
-  const isToday = dayStart === midnight(new Date(now)).getTime();
+  const dayEnd = addLocalDays(day, 1).getTime();
+  const isToday = dayStart === startOfLocalDay(new Date(now)).getTime();
   // Real length of this local day: 23 h / 25 h on DST transition days.
-  const dayHeight = ((dayEnd - dayStart) / MIN) * px;
+  const dayHeight = ((dayEnd - dayStart) / MINUTE) * px;
   const marks = useMemo(() => hourMarks(dayStart, dayEnd), [dayStart, dayEnd]);
 
   const startIso = new Date(dayStart).toISOString();
@@ -172,7 +121,7 @@ export default function DayPage() {
     ) ?? [];
 
   const blocks = useMemo(() => {
-    const items: Omit<Block, 'lane' | 'lanes'>[] = intervals.map((i: Interval) => {
+    const items: Block[] = intervals.map((i: Interval) => {
       const d = draft?.id === i.id ? draft : null;
       return {
         id: i.id,
@@ -186,10 +135,10 @@ export default function DayPage() {
     if (active) {
       const s = new Date(active.start).getTime();
       if (s < dayEnd && now > dayStart) {
-        items.push({ id: 'active', areaId: active.areaId, subAreaId: active.subAreaId, start: s, end: Math.max(now, s + MIN), active: true });
+        items.push({ id: 'active', areaId: active.areaId, subAreaId: active.subAreaId, start: s, end: Math.max(now, s + MINUTE), active: true });
       }
     }
-    return layout(items);
+    return items;
   }, [intervals, draft, active, now, dayStart, dayEnd]);
 
   // Screen geometry. Blocks too short to read become a thin marker at their true
@@ -199,8 +148,8 @@ export default function DayPage() {
     const items = blocks.map((b) => {
       const vs = Math.max(b.start, dayStart);
       const ve = Math.min(b.end, dayEnd);
-      const top = ((vs - dayStart) / MIN) * px;
-      const height = ((ve - vs) / MIN) * px;
+      const top = ((vs - dayStart) / MINUTE) * px;
+      const height = ((ve - vs) / MINUTE) * px;
       return { b, top, height, tiny: height < TINY_PX, chipTop: 0 };
     });
     let lastChipBottom = -Infinity;
@@ -215,8 +164,8 @@ export default function DayPage() {
 
   // Scroll to "now" (today) or 07:00 (other days) when the day changes.
   useEffect(() => {
-    const target = isToday ? Date.now() - 2 * 60 * MIN : atLocalTime(dayStart, 7);
-    const minutes = (target - dayStart) / MIN;
+    const target = isToday ? Date.now() - 2 * 60 * MINUTE : atLocalTime(dayStart, 7);
+    const minutes = (target - dayStart) / MINUTE;
     const t = setTimeout(() => contentRef.current?.scrollToPoint(0, Math.max(0, minutes * pxRef.current), 300), 50);
     setSelectedId(null);
     return () => clearTimeout(t);
@@ -281,20 +230,8 @@ export default function DayPage() {
       }
       if (Math.abs(dy) > 4) d.moved = true;
       if (!d.moved) return;
-      const bnd = bounds.current;
-      if (!bnd) return;
-      const snap = pxRef.current >= 4 ? 1 : 5;
-      const delta = Math.round(dy / pxRef.current / snap) * snap * MIN;
-      const minLen = snap * MIN;
-      let s = d.s0;
-      let en = d.e0;
-      if (d.mode === 'move') {
-        const dd = Math.min(Math.max(delta, bnd.min - d.s0), bnd.max - d.e0);
-        s += dd;
-        en += dd;
-      } else if (d.mode === 'top') s = Math.min(Math.max(d.s0 + delta, bnd.min), d.e0 - minLen);
-      else en = Math.max(Math.min(d.e0 + delta, bnd.max), d.s0 + minLen);
-      setDraft({ id: d.id, start: s, end: en });
+      if (!bounds.current) return;
+      setDraft({ id: d.id, ...dragRange(d.mode, d.s0, d.e0, dy / pxRef.current, pxRef.current >= 4 ? 1 : 5, bounds.current) });
     };
     function cleanup() {
       window.clearTimeout(holdTimer);
@@ -373,8 +310,8 @@ export default function DayPage() {
     for (const b of busy()) if (b.start <= start && b.end > start) start = b.end;
     if (start >= now) return toast('Can’t add time in the future');
     const next = Math.min(now, ...busy().filter((b) => b.start >= start).map((b) => b.start));
-    const end = Math.min(start + 30 * MIN, next);
-    if (end - start < MIN) return toast('No free time here');
+    const end = Math.min(start + 30 * MINUTE, next);
+    if (end - start < MINUTE) return toast('No free time here');
     openNew(start, end);
   }
 
@@ -383,8 +320,8 @@ export default function DayPage() {
     let end = Math.min(at, Date.now());
     for (const b of busy()) if (b.start < end && b.end >= end) end = b.start;
     const prev = Math.max(-Infinity, ...busy().filter((b) => b.end <= end).map((b) => b.end));
-    const start = Math.max(end - 30 * MIN, prev);
-    if (end - start < MIN) return toast('No free time just before now');
+    const start = Math.max(end - 30 * MINUTE, prev);
+    if (end - start < MINUTE) return toast('No free time just before now');
     openNew(start, end);
   }
 
@@ -397,7 +334,7 @@ export default function DayPage() {
     const rect = gridRef.current!.getBoundingClientRect();
     const step = px >= 4 ? 5 : 15;
     const minutes = Math.floor((e.clientY - rect.top) / px / step) * step;
-    newIntervalAt(dayStart + minutes * MIN);
+    newIntervalAt(dayStart + minutes * MINUTE);
   }
 
   const title = isToday
@@ -420,19 +357,19 @@ export default function DayPage() {
               tabIndex={-1}
               aria-hidden
               value={localDateKey(day)}
-              onChange={(e) => e.target.value && setDay(midnight(new Date(e.target.value + 'T00:00')))}
+              onChange={(e) => e.target.value && setDay(startOfLocalDay(new Date(e.target.value + 'T00:00')))}
             />
           </IonTitle>
           <IonButtons slot="end">
-            <IonButton onClick={() => setDay(addDays(day, -1))} aria-label="Previous day">
+            <IonButton onClick={() => setDay(addLocalDays(day, -1))} aria-label="Previous day">
               <IonIcon slot="icon-only" icon={chevronBack} />
             </IonButton>
             {!isToday && (
-              <IonButton onClick={() => setDay(midnight(new Date()))} aria-label="Today">
+              <IonButton onClick={() => setDay(startOfLocalDay(new Date()))} aria-label="Today">
                 <IonIcon slot="icon-only" icon={todayOutline} />
               </IonButton>
             )}
-            <IonButton onClick={() => setDay(addDays(day, 1))} aria-label="Next day">
+            <IonButton onClick={() => setDay(addLocalDays(day, 1))} aria-label="Next day">
               <IonIcon slot="icon-only" icon={chevronForward} />
             </IonButton>
           </IonButtons>
@@ -481,7 +418,7 @@ export default function DayPage() {
                       onClick={onClick}
                       onPointerDown={(e) => beginDrag(e, b, 'move')}
                       onContextMenu={(e) => e.preventDefault()}
-                      title={`${label} ${hhmm(b.start)}–${b.active ? 'now' : hhmm(b.end)}${b.note ? `\n${b.note}` : ''}`}
+                      title={`${label} ${formatClock(b.start)}–${b.active ? 'now' : formatClock(b.end)}${b.note ? `\n${b.note}` : ''}`}
                     >
                       {area && <IonIcon icon={iconFor(area.icon)} />}
                       <span className="chip-name">{label}</span>
@@ -498,8 +435,6 @@ export default function DayPage() {
                   style={{
                     top,
                     height: height - 2,
-                    left: `calc(${(b.lane / b.lanes) * 100}% + 2px)`,
-                    width: `calc(${100 / b.lanes}% - 4px)`,
                     ['--area-color' as string]: color, ['--on-area' as string]: ink,
                   }}
                   onClick={onClick}
@@ -512,7 +447,7 @@ export default function DayPage() {
                     {b.note && <IonIcon className="note-icon" icon={documentTextOutline} aria-label="Has a note" />}
                   </div>
                   <div className="day-block-time">
-                    {hhmm(b.start)} – {b.active ? 'now' : hhmm(b.end)} · {formatDuration(b.end - b.start, false)}
+                    {formatClock(b.start)} – {b.active ? 'now' : formatClock(b.end)} · {formatDuration(b.end - b.start, false)}
                   </div>
                   {b.note && height >= 62 && (
                     <div className="day-block-note" style={{ WebkitLineClamp: Math.max(1, Math.floor((height - 46) / 16)) }}>
@@ -529,7 +464,7 @@ export default function DayPage() {
               );
             })}
 
-            {isToday && <div className="now-line" style={{ top: ((now - dayStart) / MIN) * px }} />}
+            {isToday && <div className="now-line" style={{ top: ((now - dayStart) / MINUTE) * px }} />}
           </div>
         </div>
 
@@ -546,7 +481,7 @@ export default function DayPage() {
           <IonFabButton
             aria-label="Add interval"
             onClick={() => {
-              if (isToday) newIntervalEndingAt(Math.floor(Date.now() / (5 * MIN)) * 5 * MIN);
+              if (isToday) newIntervalEndingAt(Math.floor(Date.now() / (5 * MINUTE)) * 5 * MINUTE);
               else newIntervalAt(atLocalTime(dayStart, 12));
             }}
           >

@@ -15,13 +15,17 @@ on launch/resume and shows an "App updated" toast.
 - `src/db.ts`: schema, defaults, **versioned migrations**, backup import/export,
   `intervalsOverlapping()`
 - `src/constraints.ts`: **the only place that changes interval times** (see invariant)
-- `src/timer.ts`: track / stop / stopAt / undoStop, relabel rule, `formatDuration`
+- `src/timer.ts`: **the timer rules as pure plans** (`planStart/Restart/Switch/Stop/Track`)
+  and the DB actions that apply them (track, startAt, restartAt, switchAt, stopAt); the UI
+  uses the same plans for hints and the instant preview, so never re-implement a rule
 - `src/report.ts`: report periods and aggregation (whole-period split: untracked /
   still to come / before tracking)
 - `src/backup.ts`: backup format + full validation before anything is written
-- `src/time.ts`: local-day and DST helpers
+- `src/time.ts`: local-day and DST helpers, `MINUTE`/`HOUR`, `formatClock`
 - `src/color.ts`: all colour logic (culori); `src/theme.ts`: light/dark/system
 - `src/backGesture.ts`: Android back closes the top Ionic dialog (PWA)
+- `src/useHold.ts` (tap = now, hold = earlier), `src/useOptimisticActive.ts`,
+  `src/toast.ts`, `src/prefs.ts` (localStorage conveniences), `src/usePinchZoom.ts`
 - `src/App.tsx`: tabs, tab-bar tint, status-bar sync + crossfade, update toast
 - `src/pages/*`, `src/components/*`: UI
 
@@ -100,8 +104,8 @@ on launch/resume and shows an "App updated" toast.
   area: current one preselected; same start + other sub-area = relabel the whole timer).
   Holding a sub-area chip (not the current one) = "When did you switch to Songs?"
   (switch mode with `subId`; "From the start" first and preselected = relabel).
-  The Timer shows a sheet action's (and Stop/discard's) result at once (`showing()` in
-  TimerPage: the phone's undo snapshots + write take ~1 s) until the DB says the same.
+  The Timer shows a sheet action's (and Stop/discard's) planned result at once
+  (`useOptimisticActive`: the phone's undo snapshots + write take ~1 s) until the DB says the same.
 - Undo/redo: ↶ ↷ top-right on Timer (fixed slots, each shown only when usable). The
   last 20 timer actions (start, area/sub-area change, stop, rewind, discard,
   notification Stop) are recorded via `recordTimerAction` in `src/undo.ts` as

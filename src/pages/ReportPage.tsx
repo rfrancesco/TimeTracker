@@ -12,27 +12,19 @@ import { useActive, useAreas, useNow, useSubAreas } from '../hooks';
 import { iconFor } from '../icons';
 import { buildReport, periodLabel, periodRange, shiftPeriod, type Period } from '../report';
 import { formatDuration } from '../timer';
+import { HOUR } from '../time';
+import { readPref, writePref } from '../prefs';
 
 
 const loadPref = (k: string, d: boolean) => {
-  try {
-    const v = localStorage.getItem(k);
-    return v === null ? d : v === '1';
-  } catch {
-    return d;
-  }
+  const v = readPref(k);
+  return v === null ? d : v === '1';
 };
-const savePref = (k: string, v: boolean) => {
-  try {
-    localStorage.setItem(k, v ? '1' : '0');
-  } catch {
-    /* ignore */
-  }
-};
+const savePref = (k: string, v: boolean) => writePref(k, v ? '1' : '0');
 
 const dur = (ms: number) => formatDuration(ms, false);
 /** A whole period's length: "24h" (whole hours, always for whole-hour DST shifts), else "23h 30m". */
-const periodDur = (ms: number) => (ms % 3_600_000 === 0 ? `${ms / 3_600_000}h` : dur(ms));
+const periodDur = (ms: number) => (ms % HOUR === 0 ? `${ms / HOUR}h` : dur(ms));
 const pct = (part: number, whole: number) => (whole > 0 ? `${Math.round((part / whole) * 100)}%` : '–');
 
 export default function ReportPage() {

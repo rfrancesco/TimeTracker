@@ -8,7 +8,8 @@ import {
 import { add, cloudDownloadOutline, cloudUploadOutline, contrastOutline, refreshOutline, timerOutline, trashOutline } from 'ionicons/icons';
 import AreaEditor from '../components/AreaEditor';
 import { db, deleteTrackedTime, exportAll, importAll, nowIso, resetEverything } from '../db';
-import { useAreas, useSubAreas, useToast, type AreaView } from '../hooks';
+import { useAreas, useSubAreas, type AreaView } from '../hooks';
+import { useToast } from '../toast';
 import { iconFor } from '../icons';
 import { localDateKey } from '../time';
 import { BackupError, parseBackup } from '../backup';

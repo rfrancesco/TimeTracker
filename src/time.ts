@@ -7,6 +7,9 @@
 export const MINUTE = 60_000;
 export const HOUR = 60 * MINUTE;
 
+/** "22:45" in the user's clock format. */
+export const formatClock = (ms: number | string) => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
 /** Local midnight at the start of the day containing `d`. */
 export function startOfLocalDay(d: Date | number) {
   const x = new Date(d);
