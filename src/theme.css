@@ -108,6 +108,7 @@
   margin-top: 8px;
 }
 .timer-layout .sub-chips { margin-top: -8px; }
+.stop-sheet .sub-chips { justify-content: flex-start; margin: -4px -4px 10px; }
 .sub-chips ion-chip {
   --background: var(--app-surface);
   --color: var(--ion-text-color, #000);

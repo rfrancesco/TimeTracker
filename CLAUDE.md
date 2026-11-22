@@ -96,6 +96,10 @@ on launch/resume and shows an "App updated" toast.
   as "started at"); default = the 5-min chip; chips that don't fit are greyed, never hidden.
   Chips are exact offsets (seconds kept, so the timer moves by exactly 5:00), worked out
   when the main button is tapped; a typed time in the minute of the start/last end snaps to it.
+  Sub-areas: start/switch sheets show the target area's sub-areas as a row (running
+  area: current one preselected; same start + other sub-area = relabel the whole timer).
+  Holding a sub-area chip (not the current one) = "When did you switch to Songs?"
+  (switch mode with `subId`; "From the start" first and preselected = relabel).
   The Timer shows a sheet action's (and Stop/discard's) result at once (`showing()` in
   TimerPage: the phone's undo snapshots + write take ~1 s) until the DB says the same.
 - Undo/redo: ↶ ↷ top-right on Timer (fixed slots, each shown only when usable). The

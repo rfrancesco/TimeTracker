@@ -121,24 +121,29 @@ export default function TimerPage() {
   // slot shows the progress, in the held area's colour (the thumb covers the area).
   const [mode, setMode] = useState<RewindMode>({ kind: 'stop' });
   const [areaHold, setAreaHold] = useState<AreaView | null>(null);
+  const [holdSub, setHoldSub] = useState(false); // the held thing is a sub-area chip (of the running area)
   const areaShowTimer = useRef<number | undefined>(undefined);
   const areaDoneTimer = useRef<number | undefined>(undefined);
   const areaHoldUsed = useRef(false); // the press became a hold: the click that follows is not a tap
   const last = useLiveQuery(() => db.intervals.orderBy('end').last());
   const lastEnd = last ? Date.parse(last.end) : -Infinity;
-  const startAreaPress = (a: AreaView) => {
+  /** `subId` given (string or null = None): a sub-area chip of the running area `a`. */
+  const startAreaPress = (a: AreaView, subId?: string | null) => {
     areaHoldUsed.current = false;
+    const sub = subId !== undefined;
     window.clearTimeout(areaShowTimer.current);
     window.clearTimeout(areaDoneTimer.current);
     areaShowTimer.current = window.setTimeout(() => {
       areaHoldUsed.current = true;
+      setHoldSub(sub);
       setAreaHold(a);
     }, HOLD_SHOW);
     areaDoneTimer.current = window.setTimeout(() => {
       haptic('long');
       setAreaHold(null);
       const switching = active && a.id !== active.areaId;
-      setMode(switching ? { kind: 'switch', area: a } : { kind: 'start', area: a, min: lastEnd, afterName: last ? nameOf(last.areaId) : undefined });
+      if (sub) setMode({ kind: 'switch', area: a, subId });
+      else setMode(switching ? { kind: 'switch', area: a } : { kind: 'start', area: a, min: lastEnd, afterName: last ? nameOf(last.areaId) : undefined });
       setStopSheet(true);
     }, HOLD_DONE);
   };
@@ -147,21 +152,22 @@ export default function TimerPage() {
     window.clearTimeout(areaDoneTimer.current);
     setAreaHold(null);
   };
-  const areaHoldLabel = areaHold && (active && areaHold.id !== active.areaId ? 'Switch earlier' : 'Start earlier');
+  const areaHoldLabel = areaHold && (holdSub || (active && areaHold.id !== active.areaId) ? 'Switch earlier' : 'Start earlier');
 
-  async function doStartEarlier(a: AreaView, ms: number) {
+  async function doStartEarlier(a: AreaView, ms: number, subId: string | null) {
     const start = new Date(ms).toISOString();
-    if (active?.areaId === a.id) await showing({ ...active, start }, () => recordTimerAction(`start ${a.name} earlier`, () => restartAt(ms)));
-    else await showing({ key: 'current', areaId: a.id, subAreaId: null, start }, () => recordTimerAction(`start ${a.name} earlier`, () => startAt(a.id, null, ms)));
+    if (active?.areaId === a.id)
+      await showing({ ...active, start, subAreaId: subId }, () => recordTimerAction(`start ${a.name} earlier`, () => restartAt(ms, subId)));
+    else await showing({ key: 'current', areaId: a.id, subAreaId: subId, start }, () => recordTimerAction(`start ${a.name} earlier`, () => startAt(a.id, subId, ms)));
   }
-  async function doSwitchEarlier(a: AreaView, ms: number) {
+  async function doSwitchEarlier(a: AreaView, ms: number, subId: string | null) {
     // Same outcome as switchAt: a relabel under a minute after the start, else a new timer at `ms`.
     const next: ActiveTimer | null = !active
       ? null
       : ms - Date.parse(active.start) < RELABEL_THRESHOLD_MS
-        ? { ...active, areaId: a.id, subAreaId: null }
-        : { key: 'current', areaId: a.id, subAreaId: null, start: new Date(ms).toISOString() };
-    await showing(next, () => recordTimerAction(`switch to ${a.name} earlier`, () => switchAt(a.id, null, ms)));
+        ? { ...active, areaId: a.id, subAreaId: subId }
+        : { key: 'current', areaId: a.id, subAreaId: subId, start: new Date(ms).toISOString() };
+    await showing(next, () => recordTimerAction(`switch to ${a.name} earlier`, () => switchAt(a.id, subId, ms)));
   }
   const subsOfActive = subAreas.filter((s) => s.areaId === active?.areaId && !s.archived);
   // The current moment, not the last tick's: right after a change the digits are exact.
@@ -276,7 +282,16 @@ export default function TimerPage() {
               selectedId={active?.subAreaId ?? null}
               color={activeArea.color}
               allowNone
+              // Hold = "switch earlier" to that sub-area (not the current one: nothing to switch to).
+              onPressStart={(id) => {
+                if (id !== (active?.subAreaId ?? null)) startAreaPress(activeArea, id);
+              }}
+              onPressEnd={endAreaPress}
               onSelect={(id) => {
+                if (areaHoldUsed.current) {
+                  areaHoldUsed.current = false;
+                  return;
+                }
                 haptic();
                 doTrack(activeArea.id, id);
               }}
@@ -334,14 +349,15 @@ export default function TimerPage() {
 
           <StopEarlierSheet
             mode={mode}
-            onStart={(ms) => {
+            onStart={(ms, subId) => {
               setStopSheet(false);
-              if (mode.kind === 'start') doStartEarlier(mode.area, ms);
+              if (mode.kind === 'start') doStartEarlier(mode.area, ms, subId);
             }}
-            onSwitch={(ms) => {
+            onSwitch={(ms, subId) => {
               setStopSheet(false);
-              if (mode.kind === 'switch') doSwitchEarlier(mode.area, ms);
+              if (mode.kind === 'switch') doSwitchEarlier(mode.area, ms, subId);
             }}
+            subAreas={subAreas}
             active={active}
             area={activeArea}
             subName={activeSub?.name}

@@ -8,19 +8,30 @@ interface Props {
   color: string;
   onSelect: (id: string | null) => void;
   allowNone?: boolean;
+  /** Hold support (Timer: hold a sub-area = "switch earlier"). */
+  onPressStart?: (id: string | null) => void;
+  onPressEnd?: () => void;
 }
 
-export default function SubAreaChips({ subAreas, selectedId, color, onSelect, allowNone }: Props) {
+export default function SubAreaChips({ subAreas, selectedId, color, onSelect, allowNone, onPressStart, onPressEnd }: Props) {
   if (!subAreas.length) return null;
+  const press = (id: string | null) =>
+    onPressStart && {
+      onPointerDown: () => onPressStart(id),
+      onPointerUp: onPressEnd,
+      onPointerLeave: onPressEnd,
+      onPointerCancel: onPressEnd,
+      onContextMenu: (e: React.MouseEvent) => e.preventDefault(),
+    };
   return (
     <div className="sub-chips" style={{ ['--area-color' as string]: color, ['--on-area' as string]: onColor(color) }}>
       {allowNone && (
-        <IonChip className={selectedId === null ? 'selected' : ''} onClick={() => onSelect(null)}>
+        <IonChip className={selectedId === null ? 'selected' : ''} onClick={() => onSelect(null)} {...press(null)}>
           <IonLabel>None</IonLabel>
         </IonChip>
       )}
       {subAreas.map((s) => (
-        <IonChip key={s.id} className={s.id === selectedId ? 'selected' : ''} onClick={() => onSelect(s.id)}>
+        <IonChip key={s.id} className={s.id === selectedId ? 'selected' : ''} onClick={() => onSelect(s.id)} {...press(s.id)}>
           <IonLabel>{s.name}</IonLabel>
         </IonChip>
       ))}

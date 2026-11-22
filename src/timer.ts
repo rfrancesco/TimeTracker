@@ -98,12 +98,12 @@ export async function startAt(areaId: string, subAreaId: string | null, startMs:
   });
 }
 
-/** Started late: move the running timer's start (not before the latest saved interval ends). */
-export async function restartAt(startMs: number): Promise<void> {
+/** Started late: move the running timer's start (not before the latest saved interval ends), optionally changing its sub-area. */
+export async function restartAt(startMs: number, subAreaId?: string | null): Promise<void> {
   const a = await getActive();
   if (!a) throw new ConstraintError('Nothing is running');
   if (startMs < (await latestEnd())) throw new ConstraintError('That overlaps saved time');
-  await updateActive({ start: startMs, areaId: a.areaId, subAreaId: a.subAreaId });
+  await updateActive({ start: startMs, areaId: a.areaId, subAreaId: subAreaId === undefined ? a.subAreaId : subAreaId });
 }
 
 /**

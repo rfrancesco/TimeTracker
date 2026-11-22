@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { IonButton, IonChip, IonContent, IonIcon, IonLabel, IonModal, IonText } from '@ionic/react';
 import { play, stop as stopIcon, swapHorizontal, trashOutline } from 'ionicons/icons';
-import type { ActiveTimer } from '../db';
+import type { ActiveTimer, SubArea } from '../db';
+import SubAreaChips from './SubAreaChips';
 import type { AreaView } from '../hooks';
 import { iconFor } from '../icons';
 import { DateTimeField } from './IntervalEditor';
@@ -12,12 +13,16 @@ import { formatDuration, RELABEL_THRESHOLD_MS } from '../timer';
  * - stop: the running timer ended earlier (or 🗑 discard it)
  * - start: `area` started earlier: while idle, or (when it is the running area) the
  *   running timer started earlier. Never before `min` (end of the latest saved interval).
- * - switch: the running timer ended earlier and `area` ran from then on
+ * - switch: the running timer ended earlier and `area` ran from then on. With `subId`
+ *   (holding a sub-area chip), `area` is the running area and only the sub-area changes
+ *   (`null` = none); its first chip is "From the start" (= relabel the whole timer).
+ * Start and switch to an area with sub-areas show them as a row (the running area's
+ * current one preselected), so the sub-area can be set in the same step.
  */
 export type RewindMode =
   | { kind: 'stop' }
   | { kind: 'start'; area: AreaView; min: number; afterName?: string }
-  | { kind: 'switch'; area: AreaView };
+  | { kind: 'switch'; area: AreaView; subId?: string | null };
 
 interface Props {
   mode: RewindMode;
@@ -25,12 +30,14 @@ interface Props {
   /** The running area (for stop/switch, and "start" of the running area). */
   area: AreaView | undefined;
   subName?: string;
+  /** All sub-areas (the sheet picks the target area's). */
+  subAreas: SubArea[];
   open: boolean;
   onClose: () => void;
   onStop: (endMs: number) => void;
   onDiscard: () => void;
-  onStart: (startMs: number) => void;
-  onSwitch: (atMs: number) => void;
+  onStart: (startMs: number, subAreaId: string | null) => void;
+  onSwitch: (atMs: number, subAreaId: string | null) => void;
 }
 
 const MIN = 60_000;
@@ -39,13 +46,14 @@ const hhmm = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: '2-digi
 const quickLabel = (m: number) => (m < 60 ? `${m} min` : '1 h');
 
 /** "I forgot to stop / start / switch": pick when it actually happened. */
-export default function StopEarlierSheet({ mode, active, area, subName, open, onClose, onStop, onDiscard, onStart, onSwitch }: Props) {
+export default function StopEarlierSheet({ mode, active, area, subName, subAreas, open, onClose, onStop, onDiscard, onStart, onSwitch }: Props) {
   const start = active ? new Date(active.start).getTime() : 0;
   // A typed time (minute precision) or, when a chip is selected, that chip: chips are
   // exact offsets ("5 min ago" = now − 5:00, "5 min earlier" = start − 5:00, seconds
   // kept, so the timer moves by exactly 5:00), worked out again at the moment of applying.
   const [typedEnd, setEnd] = useState(Date.now());
   const [chip, setChip] = useState<string | null>(null);
+  const [sub, setSub] = useState<string | null>(null);
   // Re-render every second while open, so "now"-based chips and the hint stay current.
   const [, setTick] = useState(0);
   useEffect(() => {
@@ -62,6 +70,8 @@ export default function StopEarlierSheet({ mode, active, area, subName, open, on
   const isAllowed = (t: number) => (mode.kind === 'stop' ? t > start : t >= earliest);
   const runningStart = mode.kind === 'start' && active?.areaId === mode.area.id;
   const hasAfter = mode.kind === 'start' && Number.isFinite(mode.min) && !!mode.afterName;
+  const subOnly = mode.kind === 'switch' && mode.subId !== undefined;
+  const currentSub = active?.subAreaId ?? null;
 
   /**
    * The moment a chip stands for. Quick times count back from a fixed anchor per mode,
@@ -70,6 +80,7 @@ export default function StopEarlierSheet({ mode, active, area, subName, open, on
    */
   const chipTime = (key: string, now: number) => {
     if (key === 'now') return now;
+    if (key === 'start') return start;
     if (key === 'after') return mode.kind === 'start' ? mode.min : now;
     return (runningStart ? start : now) - Number(key) * MIN;
   };
@@ -77,6 +88,7 @@ export default function StopEarlierSheet({ mode, active, area, subName, open, on
   useEffect(() => {
     if (!open) return;
     setDiscard(false);
+    setSub(runningStart ? currentSub : mode.kind === 'switch' && mode.subId !== undefined ? mode.subId : null);
     const now = Date.now();
     // The smallest correction that fits, else the closest valid moment.
     const five = isAllowed(chipTime(String(QUICK[0]), now));
@@ -95,6 +107,9 @@ export default function StopEarlierSheet({ mode, active, area, subName, open, on
       // start it right after" case), otherwise 5 minutes ago.
       const recent = hasAfter && now - mode.min <= 60 * MIN;
       pick(recent || (!five && hasAfter) ? 'after' : String(QUICK[0]));
+    } else if (subOnly) {
+      // Usually the sub-area was just picked late: the whole timer.
+      pick('start');
     } else {
       // 5 min ago if the running timer started before that, else its very start (a relabel).
       if (five) pick(String(QUICK[0]));
@@ -123,12 +138,22 @@ export default function StopEarlierSheet({ mode, active, area, subName, open, on
   // Holding the running area when it already starts right after the last interval:
   // nothing earlier is possible (a later start can still be typed).
   const nothingEarlier = runningStart && mode.kind === 'start' && start - mode.min < MIN;
-  const unchanged = runningStart && end === start;
+  const subChanged = sub !== currentSub;
+  const unchanged = runningStart && end === start && !subChanged;
+  const subLabel = (id: string | null) => subAreas.find((x) => x.id === id)?.name;
+  // "Guitar · Songs" (or just "Guitar"), and for a sub-area switch the short form "Songs".
+  const targetLabel = mode.kind === 'stop' ? '' : `${mode.area.name}${sub ? ` · ${subLabel(sub)}` : ''}`;
+  const targetShort = subOnly && mode.kind === 'switch' ? (subLabel(sub) ?? mode.area.name) : targetLabel;
+  const runningLabel = `${area?.name ?? ''}${subName ? ` · ${subName}` : ''}`;
+  const rowSubs =
+    mode.kind === 'stop' || subOnly
+      ? []
+      : subAreas.filter((x) => x.areaId === mode.area.id && (!x.archived || x.id === sub)).sort((a, b) => a.order - b.order);
 
   let problem: string | null = null;
   if (end > now) problem = 'That’s in the future';
   else if (mode.kind === 'stop' && end <= start) problem = 'That’s before the timer started';
-  else if (mode.kind === 'switch' && end < start) problem = `That’s before ${area?.name ?? 'the timer'} started`;
+  else if (mode.kind === 'switch' && end < start) problem = `That’s before ${runningLabel || 'the timer'} started`;
   else if (mode.kind === 'start' && end < mode.min)
     problem = `That overlaps ${mode.afterName ?? 'saved time'} (until ${hhmm(mode.min)})`;
 
@@ -148,18 +173,22 @@ export default function StopEarlierSheet({ mode, active, area, subName, open, on
           ? `Already right after ${mode.afterName ?? 'the last interval'}.`
           : `That’s the current start.`
         : runningStart
-        ? `${mode.area.name} since ${hhmm(end)} instead of ${hhmm(start)}.`
-        : `Tracks ${mode.area.name} since ${hhmm(end)} (${formatDuration(now - end, false)} ago).`);
+          ? end === start
+            ? `The whole timer becomes ${targetLabel}.`
+            : `${targetLabel} since ${hhmm(end)} instead of ${hhmm(start)}.`
+          : `Tracks ${targetLabel} since ${hhmm(end)} (${formatDuration(now - end, false)} ago).`);
   } else {
     hint =
       problem ??
-      (end - start < RELABEL_THRESHOLD_MS
-        ? `Under a minute of ${area?.name}: the timer becomes ${mode.area.name} since ${hhmm(start)}.`
-        : `Saves ${area?.name} ${hhmm(start)}–${hhmm(end)}, then ${mode.area.name} since ${hhmm(end)}.`);
+      (end === start
+        ? `The whole timer becomes ${targetLabel}.`
+        : end - start < RELABEL_THRESHOLD_MS
+          ? `Under a minute of ${runningLabel}: the timer becomes ${targetLabel} since ${hhmm(start)}.`
+          : `Saves ${runningLabel} ${hhmm(start)}–${hhmm(end)}, then ${targetLabel} since ${hhmm(end)}.`);
   }
 
   const title =
-    mode.kind === 'stop' ? 'When did you stop?' : mode.kind === 'start' ? 'When did you start?' : `When did you switch to ${mode.area.name}?`;
+    mode.kind === 'stop' ? 'When did you stop?' : mode.kind === 'start' ? 'When did you start?' : `When did you switch to ${subOnly ? targetShort : mode.area.name}?`;
   const fieldLabel = mode.kind === 'stop' ? 'Ended' : mode.kind === 'start' ? 'Started' : 'Switched';
   const dot = (a: AreaView) => (
     <span className="dot" style={{ background: a.color, color: a.onColor }}>
@@ -172,6 +201,7 @@ export default function StopEarlierSheet({ mode, active, area, subName, open, on
   // so every chip keeps its place.
   const quick: Array<{ key: string; label: string; t: number }> = [];
   if (mode.kind === 'stop') quick.push({ key: 'now', label: 'Now', t: now });
+  if (subOnly) quick.push({ key: 'start', label: 'From the start', t: start });
   if (hasAfter && mode.kind === 'start' && mode.min <= now) quick.push({ key: 'after', label: `After ${mode.afterName}`, t: mode.min });
   for (const m of QUICK)
     quick.push({ key: String(m), label: `${quickLabel(m)} ${runningStart ? 'earlier' : 'ago'}`, t: chipTime(String(m), now) });
@@ -179,6 +209,8 @@ export default function StopEarlierSheet({ mode, active, area, subName, open, on
 
   const ready = (mode.kind === 'stop' && discard) || (!problem && !unchanged && !(mode.kind === 'start' && !target));
   const tinted = mode.kind !== 'stop' && target;
+  // Same start, other area/sub-area: the whole running timer is relabelled.
+  const wholeTimer = (runningStart || mode.kind === 'switch') && !!active && end === start;
 
   return (
     <IonModal isOpen={open} onDidDismiss={onClose} initialBreakpoint={0.6} breakpoints={[0, 0.6, 0.9]} className="stop-sheet">
@@ -200,7 +232,7 @@ export default function StopEarlierSheet({ mode, active, area, subName, open, on
                 <>
                   {dot(mode.area)}
                   <span>
-                    {mode.area.name}
+                    {targetLabel}
                     {runningStart && <IonText color="medium"> · started at {hhmm(start)}</IonText>}
                   </span>
                 </>
@@ -211,11 +243,15 @@ export default function StopEarlierSheet({ mode, active, area, subName, open, on
                   <span className="sheet-arrow">→</span>
                   {dot(mode.area)}
                   <span>
-                    {mode.area.name} <IonText color="medium">· {area.name} since {hhmm(start)}</IonText>
+                    {targetShort} <IonText color="medium">· {runningLabel} since {hhmm(start)}</IonText>
                   </span>
                 </>
               )}
             </div>
+
+            {mode.kind !== 'stop' && rowSubs.length > 0 && (
+              <SubAreaChips subAreas={rowSubs} selectedId={sub} color={mode.area.color} allowNone onSelect={setSub} />
+            )}
 
             {/* One row: the times (scroll sideways if the screen is very narrow) and 🗑 pinned right. */}
             <div className="sheet-quick">
@@ -257,15 +293,21 @@ export default function StopEarlierSheet({ mode, active, area, subName, open, on
                 // A chip is worked out at this moment ("5 min ago" = exactly 5:00 before the tap).
                 const at = chip ? Math.min(chipTime(chip, Date.now()), Date.now()) : end;
                 if (mode.kind === 'stop') return discard ? onDiscard() : onStop(at);
-                if (mode.kind === 'start') return onStart(at);
-                return onSwitch(at);
+                if (mode.kind === 'start') return onStart(at, sub);
+                return onSwitch(at, sub);
               }}
             >
               <IonIcon
                 slot="start"
                 icon={mode.kind === 'start' ? play : mode.kind === 'switch' ? swapHorizontal : discard ? trashOutline : stopIcon}
               />
-              {mode.kind === 'stop' ? (discard ? 'Discard' : `Stop at ${hhmm(end)}`) : `${mode.kind === 'start' ? 'Start' : 'Switch'} at ${hhmm(end)}`}
+              {mode.kind === 'stop'
+                ? discard
+                  ? 'Discard'
+                  : `Stop at ${hhmm(end)}`
+                : wholeTimer
+                  ? `${subLabel(sub) ?? mode.area.name} since ${hhmm(start)}`
+                  : `${mode.kind === 'start' ? 'Start' : 'Switch'} at ${hhmm(end)}`}
             </IonButton>
           </>
         )}

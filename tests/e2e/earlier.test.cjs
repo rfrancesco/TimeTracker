@@ -116,7 +116,7 @@ const { chromium, devices } = require('playwright');
   // 6. Switching within a minute of the start relabels (same rule as switching live).
   await press('Reading', 800); await release(); await p.waitForSelector(`${sheet} .sheet-title`);
   await p.locator(`${sheet} .time-input input`).fill('18:05'); await p.waitForTimeout(300);
-  lib.report('switch at Guitar’s start = relabel (hint says so)', /Under a minute of Guitar: the timer becomes Reading since (18:05|06:05 PM)/.test(await hint()), await hint());
+  lib.report('switch at Guitar’s start = relabel (hint says so)', /The whole timer becomes Reading\./.test(await hint()), await hint());
   await apply.click(); await sheetGone(); await p.waitForTimeout(500);
   lib.report('→ Reading since 18:05, nothing saved for Guitar', (await db()) === `${BASE} ▶ Reading since 18:05`, await db());
   await undo();
