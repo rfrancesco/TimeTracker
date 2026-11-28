@@ -46,7 +46,7 @@ export default function AreaPill({ areas, selectedId, onSelect, background, onPr
                 aria-checked={selected}
                 aria-label={a.name}
                 title={a.name}
-                className={`area-pill-btn ion-activatable${selected ? ' selected' : ''}`}
+                className={`area-pill-btn ion-activatable${selected ? ' selected' : ''}${a.archived ? ' archived' : ''}`}
                 style={{
                   ['--area-color' as string]: a.color,
                   ['--icon-color' as string]: selected ? a.onColor : readableOn(a.color, surface),

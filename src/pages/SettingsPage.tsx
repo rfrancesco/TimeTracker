@@ -5,8 +5,10 @@ import {
   IonPage, IonReorder, IonReorderGroup, IonSelect, IonSelectOption, IonTitle, IonToolbar, useIonActionSheet, useIonAlert,
   type ReorderEndEventDetail,
 } from '@ionic/react';
-import { add, cloudDownloadOutline, cloudUploadOutline, contrastOutline, refreshOutline, timerOutline, trashOutline } from 'ionicons/icons';
+import { add, archiveOutline, cloudDownloadOutline, cloudUploadOutline, contrastOutline, cutOutline, refreshOutline, timerOutline, trashOutline } from 'ionicons/icons';
 import AreaEditor from '../components/AreaEditor';
+import ArchivedPage from '../components/ArchivedPage';
+import CleanupDialog from '../components/CleanupDialog';
 import { db, deleteTrackedTime, exportAll, importAll, nowIso, resetEverything } from '../db';
 import { useAreas, useSubAreas, type AreaView } from '../hooks';
 import { useToast } from '../toast';
@@ -32,6 +34,16 @@ export default function SettingsPage() {
   const quieter = areas.filter((a) => areaRunningTime(a) !== 'on').length;
   const runningTimeSummary = quieter === 0 ? 'All areas' : quieter === 1 ? '1 area quieter' : `${quieter} areas quieter`;
   const intervalCount = useLiveQuery(() => db.intervals.count()) ?? 0;
+  const [archivedOpen, setArchivedOpen] = useState(false);
+  const [cleanupOpen, setCleanupOpen] = useState(false);
+  // Archived areas, and archived sub-areas of areas still in use (the built-in "Deleted" ones aren't counted).
+  const archivedCount =
+    useLiveQuery(async () => {
+      const all = await db.areas.toArray();
+      const live = new Set(all.filter((a) => !a.archived).map((a) => a.id));
+      const subs = (await db.subAreas.toArray()).filter((s) => s.archived && !s.system && live.has(s.areaId));
+      return all.filter((a) => a.archived && !a.system).length + subs.length;
+    }) ?? 0;
   const persisted = useLiveQuery(async () => (navigator.storage?.persisted ? navigator.storage.persisted() : false));
 
   async function onReorder(e: CustomEvent<ReorderEndEventDetail>) {
@@ -209,6 +221,13 @@ export default function SettingsPage() {
             <IonIcon slot="start" icon={add} />
             <IonLabel>Add area</IonLabel>
           </IonItem>
+          {archivedCount > 0 && (
+            <IonItem button detail onClick={() => setArchivedOpen(true)} className="archived-entry">
+              <IonIcon slot="start" icon={archiveOutline} />
+              <IonLabel>Archived</IonLabel>
+              <IonNote slot="end">{archivedCount}</IonNote>
+            </IonItem>
+          )}
         </IonList>
 
         <IonList>
@@ -265,6 +284,10 @@ export default function SettingsPage() {
             <IonIcon slot="start" icon={cloudDownloadOutline} />
             <IonLabel>Restore backup</IonLabel>
           </IonItem>
+          <IonItem button detail={false} onClick={() => setCleanupOpen(true)}>
+            <IonIcon slot="start" icon={cutOutline} />
+            <IonLabel>Delete tracked time…</IonLabel>
+          </IonItem>
           <IonItem button detail={false} onClick={startFresh}>
             <IonIcon slot="start" icon={trashOutline} color="danger" />
             <IonLabel color="danger">Delete data &amp; start fresh</IonLabel>
@@ -284,6 +307,8 @@ export default function SettingsPage() {
         <IonNote className="ion-padding version-note">Time Tracker · build {__APP_BUILD__}</IonNote>
       </IonContent>
       <AreaEditor area={editing} onClose={() => setEditing(null)} />
+      <ArchivedPage open={archivedOpen} onClose={() => setArchivedOpen(false)} onExport={doExport} />
+      <CleanupDialog open={cleanupOpen} onClose={() => setCleanupOpen(false)} onExport={doExport} onDone={toast} />
     </IonPage>
   );
 }

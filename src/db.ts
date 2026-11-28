@@ -19,6 +19,8 @@ export interface Area {
   /** Start a new row in the area selector after this area. */
   breakAfter?: boolean;
   archived?: boolean;
+  /** The built-in "Deleted" area (time kept from permanently deleted areas): never offered, never restored. */
+  system?: 'deleted';
   /** Where the running time ticks: off ("since …"), app only, or also in the notification. Missing = on. */
   runningTime?: RunningTime;
   /** Android app: show this area's timer as a live update (status bar, lock screen). Missing = yes. */
@@ -34,6 +36,8 @@ export interface SubArea {
   name: string;
   order: number;
   archived?: boolean;
+  /** An area's built-in "Deleted" sub-area (time kept from permanently deleted sub-areas). */
+  system?: 'deleted';
   updatedAt: string;
 }
 

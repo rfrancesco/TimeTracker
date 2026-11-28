@@ -133,3 +133,11 @@ export async function undoLastEdit(): Promise<{ ok: boolean; label?: string }> {
 export function forgetLastEdit() {
   lastEdit = null;
 }
+
+/** Forget all undo/redo (timer and Day view): after a permanent deletion they could restore what no longer exists. */
+export function clearAllHistory() {
+  done = [];
+  undone = [];
+  lastEdit = null;
+  emit();
+}

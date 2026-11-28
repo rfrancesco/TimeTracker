@@ -3,7 +3,7 @@ import {
   car, bus, train, airplane, cart, code, laptop, desktop, gameController, tv, film,
   brush, colorPalette, camera, school, library, people, person, heart, medkit, fitness,
   leaf, paw, water, bed, call, chatbubbles, mail, cash, construct, hammer, flask,
-  globe, language, mic, headset, pencil, sparkles, sunny, football, basketball, tennisball, clipboard, business,
+  globe, language, mic, headset, pencil, sparkles, sunny, football, basketball, tennisball, clipboard, business, trashOutline,
 } from 'ionicons/icons';
 
 export const ICONS: Record<string, string> = {
@@ -15,7 +15,10 @@ export const ICONS: Record<string, string> = {
   globe, sparkles, sunny, clipboard, business,
 };
 
-export const iconFor = (key: string) => ICONS[key] ?? ICONS.sparkles;
+/** Icons of built-in areas (not offered in the icon picker). */
+const SYSTEM_ICONS: Record<string, string> = { trash: trashOutline };
+
+export const iconFor = (key: string) => ICONS[key] ?? SYSTEM_ICONS[key] ?? ICONS.sparkles;
 
 /** Colour choices: the validated categorical hues first, then extras. */
 export const PALETTE = [

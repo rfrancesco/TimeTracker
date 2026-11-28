@@ -109,6 +109,15 @@
 }
 .timer-layout .sub-chips { margin-top: -8px; }
 .stop-sheet .sub-chips { justify-content: flex-start; margin: -4px -4px 10px; }
+/* Archived areas / sub-areas only show where they are the current selection: greyed. */
+.area-pill-btn.archived, .sub-chips ion-chip.archived { opacity: 0.55; }
+.area-avatar.archived { opacity: 0.55; }
+.archived-row h3 { color: var(--viz-muted); }
+.archived-note { display: block; }
+.merge-picker { display: flex; flex-direction: column; align-items: center; gap: 8px; margin: 4px 0 8px; }
+.merge-target { font-size: 0.85rem; }
+.cleanup-dates ion-input { flex: 1; }
+.cleanup-to { margin: 0 8px; color: var(--viz-muted); }
 /* Timer: the running timer's note, at the end of the sub-area row (dashed when empty). */
 .sub-chips ion-chip.note-chip { --background: transparent; border: 1.5px dashed color-mix(in srgb, var(--ion-text-color) 35%, transparent); color: var(--viz-muted); }
 .sub-chips ion-chip.note-chip.has { --background: var(--app-surface); border-color: transparent; color: var(--ion-text-color); max-width: min(240px, 70vw); }

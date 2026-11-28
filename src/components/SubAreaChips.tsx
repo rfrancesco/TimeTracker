@@ -33,7 +33,7 @@ export default function SubAreaChips({ subAreas, selectedId, color, onSelect, al
         </IonChip>
       )}
       {subAreas.map((s) => (
-        <IonChip key={s.id} className={s.id === selectedId ? 'selected' : ''} onClick={() => onSelect(s.id)} {...press(s.id)}>
+        <IonChip key={s.id} className={`${s.id === selectedId ? 'selected' : ''}${s.archived ? ' archived' : ''}`} onClick={() => onSelect(s.id)} {...press(s.id)}>
           <IonLabel>{s.name}</IonLabel>
         </IonChip>
       ))}

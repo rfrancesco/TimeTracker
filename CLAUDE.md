@@ -24,6 +24,8 @@ on launch/resume and shows an "App updated" toast.
 - `src/time.ts`: local-day and DST helpers, `MINUTE`/`HOUR`, `formatClock`
 - `src/color.ts`: all colour logic (culori); `src/theme.ts`: light/dark/system
 - `src/backGesture.ts`: Android back closes the top Ionic dialog (PWA)
+- `src/archive.ts`: archive / restore / permanent deletion (destinations: Deleted, plain,
+  merge, drop) and time cleanup; `ArchivedPage`, `DeleteDialog`, `CleanupDialog`
 - `src/useHold.ts` (tap = now, hold = earlier), `src/useOptimisticActive.ts`,
   `src/toast.ts`, `src/prefs.ts` (localStorage conveniences), `src/usePinchZoom.ts`
 - `src/App.tsx`: tabs, tab-bar tint, status-bar sync + crossfade, update toast
@@ -111,6 +113,18 @@ on launch/resume and shows an "App updated" toast.
   to the interval by `commitTimerSpan`, kept by relabel/restart and `updateActive` (unless
   the patch has a `note` key); a real switch starts the new timer without one. The Day
   editor edits the running timer's note too.
+- Areas and sub-areas are never deleted directly: removing one **archives** it (also while
+  running: the sheet offers keep tracking / stop first, or for a sub-area "continue as the
+  area"). Archived items drop out of pickers except where they are the current selection
+  (running timer; the interval being edited), shown greyed. Settings → "Archived · N" →
+  Restore, or ⋮ → Delete permanently, which asks where the time goes: the built-in
+  **Deleted** area / an area's Deleted sub-area (`system: 'deleted'`, archived, never
+  listed or restored), the area without sub-area, another area/sub-area, or deleted; a
+  running timer follows (merge = relabel, Deleted = stop, drop = discard); clears all undo
+  history. A new area/sub-area named like an archived one restores it. Settings → Data →
+  "Delete tracked time…": before a day / day range (cut at the edges, running timer
+  untouched) / time kept as Deleted. Ionic radio groups: ignore bubbled ionChange from
+  inputs inside them (`e.target === e.currentTarget`).
 - Undo/redo: ↶ ↷ top-right on Timer (fixed slots, each shown only when usable). The
   last 20 timer actions (start, area/sub-area change, stop, rewind, discard,
   notification Stop) are recorded via `recordTimerAction` in `src/undo.ts` as

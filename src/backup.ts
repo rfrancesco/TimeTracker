@@ -75,12 +75,18 @@ export function parseBackup(text: string): Backup {
     ) {
       throw new BackupError(`Area “${String(a.name)}” has an invalid live updates setting.`);
     }
+    if ((a.archived !== undefined && typeof a.archived !== 'boolean') || (a.system !== undefined && a.system !== 'deleted')) {
+      throw new BackupError(`Area “${String(a.name)}” has an invalid archived/system flag.`);
+    }
     if (a.runningTime !== undefined && !['off', 'app', 'on'].includes(a.runningTime as string)) {
       throw new BackupError(`Area “${String(a.name)}” has an invalid running time setting.`);
     }
   }
   for (const s of subAreas as Record<string, unknown>[]) {
     if (!isStr(s.name) || typeof s.order !== 'number') throw new BackupError(`Sub-area “${String(s.id)}” is incomplete.`);
+    if ((s.archived !== undefined && typeof s.archived !== 'boolean') || (s.system !== undefined && s.system !== 'deleted')) {
+      throw new BackupError(`Sub-area “${String(s.name)}” has an invalid archived/system flag.`);
+    }
     if (!areaIds.has(s.areaId as string)) throw new BackupError(`Sub-area “${String(s.name)}” belongs to an area that isn’t in the file.`);
   }
   for (const iv of intervals as Record<string, unknown>[]) {

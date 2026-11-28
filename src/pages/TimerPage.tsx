@@ -27,13 +27,14 @@ import { useOptimisticActive } from '../useOptimisticActive';
 type HoldTarget = { kind: 'stop' } | { kind: 'area'; area: AreaView } | { kind: 'sub'; area: AreaView; subId: string | null };
 
 export default function TimerPage() {
-  const areas = useAreas();
   const allAreas = useAreas(true);
   const subAreas = useSubAreas();
   const { active, showing } = useOptimisticActive(useActive());
   const activeArea = allAreas.find((a) => a.id === active?.areaId);
   const activeSub = subAreas.find((s) => s.id === active?.subAreaId);
-  const subsOfActive = subAreas.filter((s) => s.areaId === active?.areaId && !s.archived);
+  // Archived areas / sub-areas stay in the pickers while they are the running one (then they drop out).
+  const areas = allAreas.filter((a) => !a.archived || a.id === active?.areaId);
+  const subsOfActive = subAreas.filter((s) => s.areaId === active?.areaId && (!s.archived || s.id === active?.subAreaId));
   // Tick every second while the timer ticks, every minute otherwise (keeps "today" correct past midnight).
   const now = useNow(active && ticksInApp(activeArea) ? 1000 : 60_000);
   const dark = useDarkMode();

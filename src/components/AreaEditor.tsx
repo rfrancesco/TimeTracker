@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react';
 import {
   IonButton, IonButtons, IonContent, IonHeader, IonIcon, IonInput, IonItem, IonList, IonListHeader,
-  IonModal, IonReorder, IonReorderGroup, IonTitle, IonToggle, IonToolbar, useIonAlert,
+  IonModal, IonReorder, IonReorderGroup, IonTitle, IonToggle, IonToolbar, useIonActionSheet, useIonAlert,
   type ReorderEndEventDetail,
 } from '@ionic/react';
-import { add, close, closeCircle, trashOutline } from 'ionicons/icons';
+import { add, archiveOutline, close } from 'ionicons/icons';
 import { db, nowIso, uuid, type SubArea } from '../db';
+import { archive, archiveSubAndDetach, restore } from '../archive';
+import { stopAt } from '../timer';
+import { recordTimerAction } from '../undo';
 import { useDarkMode, type AreaView } from '../hooks';
 import { displayColor, onColor } from '../color';
 import { ICONS, PALETTE } from '../icons';
@@ -27,8 +30,10 @@ export default function AreaEditor({ area, onClose }: Props) {
   const [color, setColor] = useState(PALETTE[5]);
   const [breakAfter, setBreakAfter] = useState(false);
   const [subs, setSubs] = useState<SubDraft[]>([]);
-  const [removedSubs, setRemovedSubs] = useState<string[]>([]);
+  // Removed sub-areas are archived on save; `detach`: it was running and the timer continues as the area.
+  const [removedSubs, setRemovedSubs] = useState<Array<{ id: string; detach: boolean }>>([]);
   const [presentAlert] = useIonAlert();
+  const [presentSheet] = useIonActionSheet();
   const dark = useDarkMode();
   const shown = displayColor(color, dark);
 
@@ -58,6 +63,32 @@ export default function AreaEditor({ area, onClose }: Props) {
 
   async function save() {
     if (!area || !valid) return;
+    // A new area named like an archived one: offer to bring that one back (its history with it).
+    if (area === 'new') {
+      const same = (await db.areas.toArray()).find((a) => a.archived && !a.system && a.name.trim().toLowerCase() === name.trim().toLowerCase());
+      if (same) {
+        presentAlert({
+          header: `“${same.name}” is archived`,
+          message: 'Restore it with its history, or create a separate new area?',
+          buttons: [
+            { text: 'Create new', handler: () => void write() },
+            {
+              text: 'Restore',
+              handler: async () => {
+                await restore({ kind: 'area', id: same.id });
+                onClose();
+              },
+            },
+          ],
+        });
+        return;
+      }
+    }
+    await write();
+  }
+
+  async function write() {
+    if (!area) return;
     const t = nowIso();
     await db.transaction('rw', [db.areas, db.subAreas, db.intervals, db.active], async () => {
       let areaId: string;
@@ -70,47 +101,72 @@ export default function AreaEditor({ area, onClose }: Props) {
         await db.areas.update(areaId, { name: name.trim(), icon, color, breakAfter, updatedAt: t });
       }
       const kept = subs.filter((s) => s.name.trim());
+      const archivedSubs = (await db.subAreas.where('areaId').equals(areaId).toArray()).filter((s) => s.archived && !s.system);
       for (const [i, s] of kept.entries()) {
-        if (s.isNew) await db.subAreas.add({ id: s.id, areaId, name: s.name.trim(), order: i, updatedAt: t });
+        // A new sub-area named like an archived one of this area: bring that one back instead.
+        const same = s.isNew && archivedSubs.find((x) => x.name.trim().toLowerCase() === s.name.trim().toLowerCase());
+        if (same) await db.subAreas.update(same.id, { archived: false, order: i, updatedAt: t });
+        else if (s.isNew) await db.subAreas.add({ id: s.id, areaId, name: s.name.trim(), order: i, updatedAt: t });
         else await db.subAreas.update(s.id, { name: s.name.trim(), order: i, updatedAt: t });
       }
-      // Removed sub-areas: archive if referenced by history, otherwise delete.
-      for (const id of removedSubs) {
-        const used = (await db.intervals.filter((iv) => iv.subAreaId === id).count()) > 0;
-        if (used) await db.subAreas.update(id, { archived: true, updatedAt: t });
-        else await db.subAreas.delete(id);
-        const act = await db.active.get('current');
-        if (act?.subAreaId === id) await db.active.put({ ...act, subAreaId: null });
+      for (const r of removedSubs) {
+        if (r.detach) await archiveSubAndDetach(r.id);
+        else await archive({ kind: 'sub', id: r.id });
       }
     });
     onClose();
   }
 
-  function removeArea() {
+  /** Remove a sub-area from the list (archived on save). If it is running, ask what the timer does. */
+  async function removeSub(i: number) {
+    const s = subs[i];
+    const drop = (detach: boolean) => {
+      if (!s.isNew) setRemovedSubs([...removedSubs, { id: s.id, detach }]);
+      setSubs(subs.filter((_, j) => j !== i));
+    };
+    const act = await db.active.get('current');
+    if (s.isNew || act?.subAreaId !== s.id || area === 'new' || !area) return drop(false);
+    presentSheet({
+      header: `${s.name} is running`,
+      buttons: [
+        { text: `Archive, keep ${s.name} until I switch`, handler: () => drop(false) },
+        { text: `Archive, the timer continues as ${area.name}`, handler: () => drop(true) },
+        { text: 'Cancel', role: 'cancel' },
+      ],
+    });
+  }
+
+  /** Archive the area (Settings → Archived restores it). If it is running, ask what the timer does. */
+  async function archiveArea() {
     if (!area || area === 'new') return;
+    const done = async () => {
+      await archive({ kind: 'area', id: area.id });
+      onClose();
+    };
+    const act = await db.active.get('current');
+    if (act?.areaId === area.id) {
+      presentSheet({
+        header: `${area.name} is running`,
+        buttons: [
+          { text: 'Archive, keep tracking until I stop', handler: () => void done() },
+          {
+            text: 'Stop the timer, then archive',
+            handler: async () => {
+              await recordTimerAction(`stop ${area.name}`, () => stopAt());
+              await done();
+            },
+          },
+          { text: 'Cancel', role: 'cancel' },
+        ],
+      });
+      return;
+    }
     presentAlert({
-      header: `Delete “${area.name}”?`,
-      message: 'Past intervals are kept in your history; the area is just hidden from the selector.',
+      header: `Archive “${area.name}”?`,
+      message: 'Hidden from the timer. Its time stays in your history and reports; Settings → Archived brings it back.',
       buttons: [
         { text: 'Cancel', role: 'cancel' },
-        {
-          text: 'Delete',
-          role: 'destructive',
-          handler: async () => {
-            const used = (await db.intervals.where('areaId').equals(area.id).count()) > 0;
-            const act = await db.active.get('current');
-            if (act?.areaId === area.id) {
-              presentAlert({ header: 'Area is being tracked', message: 'Stop the timer first.', buttons: ['OK'] });
-              return;
-            }
-            if (used) await db.areas.update(area.id, { archived: true, updatedAt: nowIso() });
-            else {
-              await db.areas.delete(area.id);
-              await db.subAreas.where('areaId').equals(area.id).delete();
-            }
-            onClose();
-          },
-        },
+        { text: 'Archive', handler: () => void done() },
       ],
     });
   }
@@ -201,13 +257,11 @@ export default function AreaEditor({ area, onClose }: Props) {
                 slot="end"
                 fill="clear"
                 color="medium"
-                aria-label="Remove sub-area"
-                onClick={() => {
-                  if (!s.isNew) setRemovedSubs([...removedSubs, s.id]);
-                  setSubs(subs.filter((_, j) => j !== i));
-                }}
+                aria-label="Archive sub-area"
+                className="sub-archive"
+                onClick={() => removeSub(i)}
               >
-                <IonIcon slot="icon-only" icon={closeCircle} />
+                <IonIcon slot="icon-only" icon={archiveOutline} />
               </IonButton>
               <IonReorder slot="end" />
             </IonItem>
@@ -221,9 +275,9 @@ export default function AreaEditor({ area, onClose }: Props) {
 
         {area !== 'new' && (
           <div className="ion-padding">
-            <IonButton expand="block" fill="outline" color="danger" onClick={removeArea}>
-              <IonIcon slot="start" icon={trashOutline} />
-              Delete area
+            <IonButton expand="block" fill="outline" color="medium" onClick={archiveArea}>
+              <IonIcon slot="start" icon={archiveOutline} />
+              Archive area
             </IonButton>
           </div>
         )}

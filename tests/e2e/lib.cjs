@@ -89,8 +89,8 @@ const timeline = (p) =>
     return `[${list}] ${active ? `▶ ${label(active)} since ${hm(active.start)}` : 'idle'}`;
   });
 
-/** Read from the database: `fn({ areas, subs, intervals, active })` runs in the page. */
-const read = (p, fn) => inDb(p, 'readonly', fn);
+/** Read from the database: `fn({ areas, subs, intervals, active, arg })` runs in the page (it sees only `arg`, not your variables). */
+const read = (p, fn, arg) => inDb(p, 'readonly', fn, arg);
 
 /** The running timer's start (ms), or null. */
 const activeStart = (p) => inDb(p, 'readonly', ({ active }) => (active ? Date.parse(active.start) : null));

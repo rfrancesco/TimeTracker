@@ -166,6 +166,11 @@ export async function commitTimerSpan(a: ActiveTimer, end: number): Promise<Inte
   return record;
 }
 
+/** Remove all saved time in [s, e); intervals crossing a boundary are cut at it. The running timer is untouched. */
+export async function clearRange(s: number, e: number) {
+  await db.transaction('rw', [db.intervals], async () => applyOps(carve(await overlapping(s, e), s, e)));
+}
+
 /** Free space around an interval, for clamping drags/resizes in the day view. */
 export async function freeBounds(id: string, start: number, end: number) {
   const prev = await db.intervals

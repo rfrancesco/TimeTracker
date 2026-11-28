@@ -29,7 +29,8 @@ interface Props {
 }
 
 export default function IntervalEditor({ value, onClose }: Props) {
-  const areas = useAreas();
+  // Archived areas / sub-areas are offered only when this interval already uses them (shown greyed).
+  const areas = useAreas(true).filter((a) => !a.archived || a.id === value?.areaId);
   const subAreas = useSubAreas();
   const [v, setV] = useState<EditorValue | null>(value);
   const editUndo = useEditUndo();
@@ -56,7 +57,7 @@ export default function IntervalEditor({ value, onClose }: Props) {
             : null;
   const valid = problem === null;
   const area = areas.find((a) => a.id === v?.areaId);
-  const subs = subAreas.filter((s) => s.areaId === v?.areaId && !s.archived);
+  const subs = subAreas.filter((s) => s.areaId === v?.areaId && (!s.archived || s.id === value?.subAreaId));
 
   async function save(overwrite = false) {
     if (!v || !valid) return;
